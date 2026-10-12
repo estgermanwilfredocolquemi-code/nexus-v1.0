@@ -22,7 +22,7 @@ dotnet run --project "nexus 3.csproj"
 
 ## Manual técnico
 
-Consulta [NEXUS — Manual técnico y preparación para el examen H3](docs/Manual-tecnico-H3.md). El manual distingue las características que existen en el código de los ejemplos complementarios de interfaces y LINQ, que no están implementados actualmente.
+Consulta [NEXUS — Manual técnico y preparación para el examen H3](docs/Manual-tecnico-H3.md). El manual distingue las características que existen en el código de los ejemplos complementarios de interfaces y LINQ, que no están implementados actualmente. También puedes descargar la [versión PDF](docs/NEXUS-Manual-tecnico-H3.pdf).
 
 ## Higiene del repositorio
 
