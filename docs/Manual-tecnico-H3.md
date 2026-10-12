@@ -249,43 +249,54 @@ Si se cambia `Items` para devolver una colección de solo lectura, código consu
 
 ## 8. Diagnóstico de aprendizaje: prompt espejo
 
+Este diagnóstico se basa exclusivamente en los mensajes escritos por el usuario en esta conversación. No atribuye al usuario explicaciones, respuestas ni ejemplos producidos por el asistente.
+
 ### Evidencia disponible
-Este diagnóstico usa únicamente los mensajes del usuario visibles en esta conversación. El usuario pidió la explicación en español, preguntó si el repositorio cumplía la consigna y luego pidió intentar completar lo que faltaba. No hay respuestas del usuario a ejercicios de POO ni explicaciones de su razonamiento técnico. Por ello, las solicitudes demuestran orientación sobre el producto esperado, pero no permiten atribuir comprensión técnica.
+
+El usuario pidió analizar el repositorio con relación a una consigna de estudio, solicitó la explicación en español, preguntó qué requisitos estaban cumplidos y pidió completar lo faltante. Después siguió los pasos para cambiar la visibilidad del repositorio y compartió capturas del estado en GitHub. También preguntó cómo ejecutar el prompt espejo y aclaró que ese era el resultado que quería. En esta conversación no respondió preguntas técnicas ni explicó por sí mismo fragmentos de código.
 
 ### 1. Fortalezas demostradas
-- Identificaste que el idioma de la explicación debía ser español.
-- Contrastaste el estado del repositorio con la consigna y pediste completar las brechas detectadas.
-- Evidencia limitada: estas acciones muestran seguimiento de requisitos, pero no acreditan por sí solas dominio de programación.
+
+- **Atención al objetivo:** aportó la consigna completa y pidió revisar el proyecto contra sus requisitos.
+- **Seguimiento del trabajo:** preguntó por las brechas y pidió ayuda para completarlas.
+- **Verificación práctica:** siguió el cambio de visibilidad en GitHub y compartió una captura de la página que indicaba que el repositorio era público.
+- **Aclaración de necesidades:** pidió que la explicación fuera en español y precisó que quería el prompt espejo.
+
+Estas son fortalezas observables de organización y seguimiento. No demuestran por sí solas dominio de los conceptos técnicos del Hito 3.
 
 ### 2. Falencias observadas
-No hay errores conceptuales del usuario observables en esta conversación. Tampoco hay respuestas técnicas suficientes para identificar dificultades específicas. Una falta de evidencia no equivale a una falencia.
+
+No hay errores conceptuales del usuario observables en la conversación. Tampoco hay explicaciones propias suficientes para detectar dificultades de razonamiento, dudas recurrentes o conceptos mal comprendidos. La falta de evidencia no debe interpretarse como una falencia.
 
 ### 3. Diagnóstico del Hito 3
 
 | Concepto | Clasificación | Justificación |
 |---|---|---|
-| POO | Evidencia insuficiente | No hay explicación propia del usuario sobre el paradigma. |
-| Clases y objetos | Evidencia insuficiente | No hay análisis propio de clases o instancias. |
-| Constructores | Evidencia insuficiente | No hay respuesta del usuario sobre inicialización u overload. |
-| Encapsulamiento | Evidencia insuficiente | No hay razonamiento propio sobre acceso o protección de estado. |
-| Herencia | Evidencia insuficiente | No hay explicación propia de bases y derivadas. |
-| Polimorfismo | Evidencia insuficiente | No hay predicción del despacho virtual en una instancia concreta. |
-| Interfaces | Evidencia insuficiente | No hay explicación propia de contratos o implementación. |
-| Listas genéricas | Evidencia insuficiente | No hay análisis propio de `List<T>`. |
-| LINQ | Evidencia insuficiente | No hay consulta ni explicación propia de LINQ. |
+| POO | Evidencia insuficiente | El usuario pidió analizar el proyecto, pero no explicó con sus palabras el paradigma ni sus principios. |
+| Clases y objetos | Evidencia insuficiente | No describió clases, instancias o relaciones del código por cuenta propia. |
+| Constructores | Evidencia insuficiente | No explicó inicialización, parámetros ni sobrecarga. |
+| Encapsulamiento | Evidencia insuficiente | No analizó modificadores de acceso ni protección del estado. |
+| Herencia | Evidencia insuficiente | No explicó clases base y derivadas con un ejemplo propio. |
+| Polimorfismo | Evidencia insuficiente | No predijo qué implementación se ejecuta en una llamada virtual. |
+| Interfaces | Evidencia insuficiente | No explicó contratos ni implementación de interfaces. |
+| Listas genéricas | Evidencia insuficiente | No analizó por cuenta propia una colección `List<T>`. |
+| LINQ | Evidencia insuficiente | No escribió ni interpretó consultas LINQ. |
 
-### 4. Forma de aprender observable
-En esta conversación pediste una evaluación contra los requisitos y solicitaste ayuda para cerrar las brechas. No hay evidencia suficiente para valorar cómo investigas el código, contrastas explicaciones técnicas o corriges errores conceptuales.
+### 4. Forma de aprender
+
+La evidencia muestra que el usuario busca relacionar el proyecto con los requisitos de la asignatura, pide explicaciones en el idioma que necesita y verifica en GitHub los cambios prácticos. También identifica cuando la conversación se desvía y vuelve a precisar su objetivo. No hay evidencia suficiente para valorar cómo analiza código por sí mismo, contrasta explicaciones técnicas o corrige errores de programación.
 
 ### 5. Plan de estudio prioritario
-1. **Clases, objetos y encapsulamiento:** dibuja el estado de un `Objeto` antes y después del constructor; explica quién puede modificar cada propiedad de `Inventario`.
-2. **Constructores y `base`:** sigue la creación de un `Robot` desde `SeleccionarPersonaje()` hasta el constructor de `Personaje`; luego escribe una sobrecarga complementaria.
-3. **Herencia y polimorfismo:** predice qué método se ejecuta con una referencia `Personaje` que apunta a `Robot`, y justifica por qué.
-4. **Interfaces:** diseña `IAnalizable` e implementa el contrato en dos clases sin relación de herencia; identifica qué obliga a implementar la interfaz.
-5. **Listas y LINQ:** filtra objetos por tipo y ordénalos por nombre con LINQ; resuelve el mismo problema con `foreach` y compara los resultados.
+
+1. **POO, clases, objetos y encapsulamiento.** Ejercicio: explica qué representa cada clase principal de NEXUS; señala un campo, una propiedad y un método; analiza qué puede modificarse mediante `Inventario.Items` y qué cambiaría al ofrecer una colección de solo lectura.
+2. **Constructores, `this` y `base`.** Ejercicio: sigue paso a paso la creación de un `Robot` desde la selección del personaje hasta el constructor de `Personaje`; escribe una sobrecarga complementaria y explica qué inicializa cada constructor.
+3. **Herencia y polimorfismo.** Ejercicio: usa una variable `Personaje` que contenga un `Robot`; predice qué versión de `Reaccionar()` se ejecuta y justifica la respuesta con `virtual` y `override`.
+4. **Interfaces y diseño.** Ejercicio: diseña una interfaz `IAnalizable` para dos clases no relacionadas por herencia; identifica el contrato y compara la solución con herencia y composición.
+5. **Listas genéricas y LINQ.** Ejercicio: filtra objetos del inventario por tipo, ordénalos por nombre y proyecta sus nombres con `Where`, `OrderBy` y `Select`; resuelve el mismo caso con `foreach` y compara resultados.
 
 ### 6. Conclusión
-La conversación demuestra que identificaste el resultado esperado y solicitaste completar el material. No demuestra todavía dominio o dificultad en los conceptos técnicos del H3. Para considerar demostrada la comprensión, deberías poder explicar el código de memoria, predecir el resultado de llamadas virtuales y modificaciones a listas, y resolver ejercicios de interfaz y LINQ sin asistencia.
+
+La conversación demuestra organización para seguir una consigna, verificación práctica en GitHub y capacidad para pedir una explicación en el idioma requerido. No demuestra todavía comprensión técnica de los temas del Hito 3 porque el usuario no respondió ejercicios ni explicó el código. Antes del examen debería poder describir la arquitectura de NEXUS, explicar la creación y el estado de sus objetos, predecir llamadas polimórficas y resolver ejercicios de interfaces, listas y LINQ sin ayuda.
 
 ## 9. Cómo ejecutar el proyecto
 
