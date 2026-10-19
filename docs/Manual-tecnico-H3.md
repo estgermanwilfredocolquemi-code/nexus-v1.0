@@ -7,6 +7,166 @@
 
 > Los ejemplos identificados como **complementarios** explican conceptos solicitados por el H3 que no están implementados en el código actual. No deben confundirse con funcionalidades de NEXUS.
 
+## 0. Guía desde cero: cómo leer `Program.cs`
+
+Esta sección empieza por lo más básico. No necesitas saber el código de memoria: sigue el orden en que el programa se ejecuta y pregúntate qué dato cambia en cada paso. El archivo completo tiene muchas funciones, pero el juego se entiende siguiendo primero `Main()` y luego abriendo los métodos que este llama.
+
+### 0.1 ¿Qué es `class Program` y qué es `Main()`?
+
+En C# una **clase** es una definición que reúne datos y funciones. En NEXUS existe la clase llamada `Program`, que comienza en la línea 5 de [Program.cs](https://github.com/estgermanwilfredocolquemi-code/nexus-v1.0/blob/main/Program.cs#L5).
+
+Dentro de esa clase está el método `Main()`, que empieza en la línea 43. **No hay una clase llamada `Main`**: `Program` es la clase y `Main` es el método de entrada. Cuando se inicia el programa, C# comienza a ejecutar las instrucciones de `Main()`.
+
+```csharp
+class Program
+{
+    static void Main()
+    {
+        Console.Title = "NEXUS SYSTEM v1.0";
+        ConfigurarConsola();
+        InicioNexus();
+        RegistrarExplorador();
+    }
+}
+```
+
+Cómo leer la firma `static void Main()`:
+
+- `static`: se puede ejecutar sin crear un objeto `Program`.
+- `void`: el método no devuelve un resultado.
+- `Main`: nombre especial que C# usa como entrada del programa.
+- `()`: no recibe argumentos en esta versión.
+
+Las llaves `{` y `}` delimitan el contenido de la clase y del método. Cada línea terminada en `;` suele ser una instrucción. En el programa real, `Main()` sigue con el registro, las selecciones y el menú; revisa [las líneas 43–135](https://github.com/estgermanwilfredocolquemi-code/nexus-v1.0/blob/main/Program.cs#L43-L135).
+
+### 0.2 ¿Qué significa `using`?
+
+Al principio del archivo aparecen instrucciones como:
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Threading;
+```
+
+`using` permite usar tipos de bibliotecas de .NET con sus nombres cortos. Por ejemplo, `Console` pertenece a `System`, y `List<T>` pertenece a `System.Collections.Generic`. No son pasos del juego que se ejecutan en orden; preparan los nombres que el archivo necesita.
+
+### 0.3 Variables: datos que el juego conserva
+
+Una variable tiene un tipo, un nombre y, a veces, un valor inicial:
+
+```csharp
+static string nombre = "";
+static int edad;
+static bool conectado = true;
+static string[] realidades = { "TIERRA-01", "TIERRA-02" };
+```
+
+- `string`: texto, como el nombre del jugador.
+- `int`: número entero, como la edad o energía.
+- `bool`: verdadero o falso; `conectado` decide si el juego sigue.
+- `string[]`: arreglo de textos; `realidades` guarda opciones.
+- `=`: asigna un valor. `edad = 20` guarda 20 en `edad`.
+- `static`: en `Program`, estos datos pertenecen a la clase y los métodos estáticos los pueden usar sin recibirlos como parámetros.
+
+Las variables declaradas al inicio de `Program` permanecen disponibles durante la partida. Por ejemplo, `RegistrarExplorador()` guarda el nombre y la edad allí, y otros métodos los muestran o evalúan después. Puedes verlas al inicio de [Program.cs](https://github.com/estgermanwilfredocolquemi-code/nexus-v1.0/blob/main/Program.cs#L5-L41).
+
+### 0.4 Métodos: acciones con nombre
+
+Un **método** es un grupo de instrucciones al que se le da un nombre. Cuando el código escribe `RegistrarExplorador();`, está llamando ese método. La definición aparece en otra parte:
+
+```csharp
+static void RegistrarExplorador()
+{
+    // instrucciones para pedir y guardar los datos
+}
+```
+
+En la llamada se escribe el nombre seguido de paréntesis y punto y coma. En la definición se indica qué hace el método entre llaves. Separar el programa en métodos permite organizar el trabajo: `MostrarMapa()` dibuja el mapa; `LeerRango()` valida números; `Desconectar()` termina la conexión del juego.
+
+Los métodos principales de `Program` se pueden agrupar así:
+
+| Parte del juego | Métodos de `Program` | Qué hacen |
+|---|---|---|
+| Inicio y presentación | `ConfigurarConsola`, `InicioNexus`, `BarraCargaEntrada` | Configuran y muestran la pantalla inicial. |
+| Datos y preparación | `RegistrarExplorador`, `SeleccionarPersonaje`, `SeleccionarRealidad`, `InicializarMision` | Piden información y crean el estado inicial. |
+| Reglas de entrada | `EvaluacionInicial`, `LeerRango` | Comprueban condiciones y entradas válidas. |
+| Menú y acciones | `MostrarInterfazPrincipal`, `Explorar`, `AnalizarIRIS`, `MostrarEstado`, `RecuperarEnergia`, `EscanearRealidad`, `MostrarMapa`, `ComunicacionIRIS`, `Desconectar` | Presentan el menú y ejecutan lo que el jugador elige. |
+| Misión y salida | `EvaluarSituacion`, `IntentarExtraccion`, `CompletarMision`, `SalidaControlada` | Actualizan objetivos y cierran el juego cuando corresponde. |
+| Ayudas visuales | `Encabezado`, `Progreso`, `Exito`, `Error`, `Pausa` | Reutilizan mensajes y formato de pantalla. |
+
+### 0.5 El recorrido completo de `Main()`
+
+Lee `Main()` de arriba hacia abajo. En palabras sencillas, hace esto:
+
+1. Cambia el título de la ventana.
+2. Llama a `ConfigurarConsola()` e `InicioNexus()`.
+3. Llama a `RegistrarExplorador()` para solicitar nombre, género, edad y estado físico.
+4. Llama a `SeleccionarPersonaje()` y `SeleccionarRealidad()`.
+5. Inicializa la misión y el inventario.
+6. Evalúa si edad y energía permiten comenzar.
+7. Si la evaluación falla, muestra la salida y hace `return`, que significa “salir ahora de este método”.
+8. Si puede continuar, entra al menú repetido.
+9. Ejecuta la acción elegida y vuelve a revisar el estado.
+10. Cuando `conectado` pasa a `false`, termina el ciclo y llama a `SalidaControlada()`.
+
+### 0.6 Decisiones, ciclos y lectura del menú
+
+**Condición `if`:** ejecuta un bloque solo cuando algo es verdadero. En `if (!conectado)`, el signo `!` significa “no”; es decir, “si no está conectado”. `return` sale del método.
+
+**Ciclo `while`:** repite instrucciones mientras la condición sea verdadera. `while (conectado)` mantiene visible el menú hasta que alguna acción cambie `conectado` a `false`.
+
+**Selección `switch`:** escoge qué bloque ejecutar según el valor. Como `Console.ReadLine()` lee texto, el menú compara `opcion` con `"1"`, `"2"`, etc. Cada `case` es una opción y `break` termina ese caso; no termina el ciclo `while`. `default` atiende una entrada que no coincide con ninguna opción.
+
+**Operadores que aparecen:**
+
+- `&&`: “y”; las dos condiciones deben ser verdaderas.
+- `||`: “o”; basta con que una condición sea verdadera.
+- `!`: niega una condición.
+- `==`: compara si dos valores son iguales.
+- `<`, `>`: comparan si un valor es menor o mayor.
+- `++`: suma uno; `--`: resta uno.
+
+### 0.7 Cómo se valida un número
+
+`LeerRango(mensaje, minimo, maximo)` es un buen ejemplo para estudiar un método paso a paso ([líneas 3833–3862](https://github.com/estgermanwilfredocolquemi-code/nexus-v1.0/blob/main/Program.cs#L3833-L3862)):
+
+1. Muestra el mensaje, por ejemplo “EDAD”.
+2. Lee una línea del teclado.
+3. `int.TryParse(..., out int numero)` intenta convertir el texto a entero sin detener el programa si no es un número.
+4. Comprueba que `numero >= minimo` y `numero <= maximo`.
+5. Si cumple ambas condiciones, `return numero` entrega el valor y sale del método.
+6. Si no cumple, muestra error y el `while (true)` vuelve a preguntar.
+
+Por eso, para `LeerRango("EDAD", 1, 100)`, escribir `25` devuelve 25; escribir `150` muestra error y vuelve a pedir el dato.
+
+### 0.8 ¿Qué son `new`, una clase y un objeto?
+
+Una clase describe cómo será un tipo de objeto. `new` crea un objeto concreto de esa clase. Por ejemplo, en `SeleccionarPersonaje()`, `new Robot(nombre, false)` construye un robot; en `InicializarMision()`, `new Inventario()` crea el inventario.
+
+En el menú de selección, la variable `personaje` se declara del tipo general `Personaje`, pero puede guardar una instancia de `Humano`, `Robot`, `Enemigo` o `EnemigoRobot`. Es como una variable “personaje” que puede referirse a distintos tipos concretos.
+
+### 0.9 Las clases que vienen después de `Program`
+
+Al final del archivo se definen las clases del juego. No son nuevas aplicaciones ni nuevos puntos de entrada; son los tipos que `Program` utiliza:
+
+- `Personaje` es la base común. Es `abstract`, por lo que se usa como molde y no se crea directamente.
+- `Humano`, `Robot`, `Enemigo` y `EnemigoRobot` heredan de `Personaje`. Los dos puntos en `class Robot : Personaje` indican herencia.
+- `virtual` marca un método que una clase hija puede especializar; `override` indica esa versión especializada.
+- `Objeto` representa un artículo del inventario.
+- `Inventario` conserva una lista de objetos y tiene métodos para agregarlos, buscarlos y eliminarlos.
+- `Mision` guarda objetivos y calcula el progreso.
+- `EventoNexus` guarda un tipo, una descripción y el momento en que ocurrió.
+- `TipoObjeto` es un `enum`: una lista fija de categorías como `Energia`, `Escudo` y `Analizador`.
+
+### 0.10 Respuesta corta que puedes usar en el examen
+
+> “El punto de entrada del programa es el método estático `Main()`, que está dentro de la clase `Program`; no existe una clase llamada `Main`. `Main()` coordina el inicio, llama a métodos para registrar al explorador y configurar la misión, y después repite el menú con `while (conectado)`. El `switch` decide qué acción ejecutar. Las clases de dominio, como `Personaje`, `Inventario` y `Mision`, representan los objetos y el estado del juego.”
+
+Practica decirlo con tus palabras y luego agrega un ejemplo de una clase derivada, como `Robot : Personaje`. No memorices solo nombres: explica qué llama a qué y qué condición hace que el juego avance o termine.
+
+---
+
 ## 1. Propósito y funcionamiento general
 
 NEXUS es una aplicación de consola de una misión ficticia de exploración. El jugador registra los datos de su explorador, escoge una clase y una realidad, y recorre un menú de acciones. El estado de la partida se mantiene en memoria mientras se ejecuta el programa.
