@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 
@@ -108,6 +108,10 @@ class Program
 
                 case "8":
                     MostrarNarrativa();
+                    break;
+
+                case "0":
+                    AbrirAsistenteIris();
                     break;
 
                 case "9":
@@ -932,7 +936,10 @@ class Program
             "║                                                                                                        ║");
 
         Console.WriteLine(
-            "║     [7] ENLACE IRIS          [8] HISTORIA                  [9] DESCONECTAR                             ║");
+            "║     [7] ENLACE IRIS          [8] HISTORIA                  [0] ASISTENTE IRIS                          ║");
+
+        Console.WriteLine(
+            "║     [9] DESCONECTAR                                                                                   ║");
 
         Console.WriteLine(
             "║                                                                                                        ║");
@@ -3254,6 +3261,50 @@ class Program
 
     // HISTORIA
 
+    // ASISTENTE IRIS
+
+    static void AbrirAsistenteIris()
+    {
+        while (true)
+        {
+            Console.Clear();
+            Encabezado("ASISTENTE IRIS // CONSULTA DE EXPEDICIÓN");
+            Console.WriteLine("  Soy IRIS. Puedo explicar misión, mapa, explorador, inventario, energía o estado.");
+            Console.WriteLine("  Escribe tu pregunta o 'volver' para regresar al centro de operaciones.");
+            Console.WriteLine();
+            Console.Write("  Tú > ");
+            string pregunta = (Console.ReadLine() ?? "").Trim();
+            if (pregunta.Equals("volver", StringComparison.OrdinalIgnoreCase) || pregunta.Equals("salir", StringComparison.OrdinalIgnoreCase)) return;
+            Console.WriteLine();
+            Console.WriteLine("  IRIS > " + ResponderIris(pregunta));
+            Console.WriteLine();
+            Console.WriteLine("  Pulsa una tecla para consultar otra cosa...");
+            Console.ReadKey(true);
+        }
+    }
+
+    static string ResponderIris(string pregunta)
+    {
+        string texto = pregunta.ToLowerInvariant();
+        if (texto.Contains("mision") || texto.Contains("misión") || texto.Contains("objetivo"))
+        {
+            string objetivos = (mision.AnomaliaEncontrada ? "anomalía localizada" : "localizar la anomalía") + ", " + (mision.NucleoEncontrado ? "núcleo recuperado" : "recuperar el núcleo") + ", " + (mision.EntidadSuperada ? "entidad superada" : "superar la entidad") + " y " + (mision.Extraccion ? "extracción completada" : "extraerse en el punto C");
+            return $"La misión {mision.Nombre} lleva {mision.Progreso}/4 objetivos. Estado: {objetivos}.";
+        }
+        if (texto.Contains("energia") || texto.Contains("energía")) return energia < 30 ? $"Energía actual: {energia}%. Nivel crítico. Recupera energía desde el menú; una célula restaura hasta 25 puntos." : $"Energía actual: {energia}%. Puedes explorar; vigila también la conexión ({conexion}%) y el peligro ({peligro}%).";
+        if (texto.Contains("conexion") || texto.Contains("conexión")) return $"Enlace actual: {conexion}%. Si cae demasiado, la expedición puede volverse inestable. Estado de peligro: {peligro}%.";
+        if (texto.Contains("peligro") || texto.Contains("amenaza")) return $"Peligro: {peligro}%. Explora con cautela, consulta el mapa y conserva energía para retirarte.";
+        if (texto.Contains("inventario") || texto.Contains("objeto") || texto.Contains("item"))
+        {
+            if (inventario.CantidadTotal == 0) return "El inventario está vacío por ahora. Explora para encontrar recursos y objetos útiles.";
+            return $"Llevas {inventario.CantidadTotal} unidades: {string.Join(", ", inventario.Items.Select(i => $"{i.Nombre} x{i.Cantidad}"))}. La célula de energía recupera hasta 25 puntos.";
+        }
+        if (texto.Contains("explorador") || texto.Contains("personaje") || texto.Contains("clase")) return $"Explorador: {nombre}, perfil {personaje.Tipo}, salud {personaje.Salud}, escudo {personaje.Escudo}, ataque {personaje.Ataque} y defensa {personaje.Defensa}.";
+        if (texto.Contains("mapa") || texto.Contains("simbolo") || texto.Contains("símbolo")) return "El mapa muestra tu posición (@), recursos (R), anomalías (X), entidades y extracción (C). Usa [6] Abrir mapa para ver la realidad actual.";
+        if (texto.Contains("realidad") || texto.Contains("donde") || texto.Contains("dónde")) return $"Estás en {realidad}. El peligro es {peligro}% y la conexión {conexion}%. Consulta el mapa antes de avanzar.";
+        if (texto.Contains("ayuda") || texto.Contains("hola")) return "Estoy aquí para explicar tu expedición. Pregúntame por misión, mapa, explorador, inventario, energía, conexión o peligro.";
+        return "Todavía no tengo una respuesta específica para eso. Puedo explicar misión, objetivos, mapa, explorador, inventario, energía, conexión o peligro.";
+    }
     static void MostrarNarrativa()
     {
         Console.Clear();
@@ -4383,3 +4434,4 @@ class EventoNexus
         Momento = DateTime.Now;
     }
 }
+
