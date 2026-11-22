@@ -25,6 +25,7 @@ internal sealed class NexusForm : Form
     private int selectedAge = 18;
     private int selectedFitness = 80;
     private int selectedCharacter = 1;
+    private readonly NexusPersistence persistence = new();
     private volatile bool closing;
     private readonly string splashPath = Path.Combine(AppContext.BaseDirectory, "nexus-splash.png");
     private readonly string hubPath = Path.Combine(AppContext.BaseDirectory, "hub-background.png");
@@ -103,8 +104,9 @@ internal sealed class NexusForm : Form
             explorerName = name.Text.Trim();
             ShowExplorerRegistration();
         }));
-        nav.Controls.Add(NavButton("⚙   Configuración", false, () => MessageBox.Show("Configuración de NEXUS", "NEXUS")));
-        nav.Controls.Add(NavButton("▥   Estadísticas", false, () => MessageBox.Show("Las estadísticas aparecerán al iniciar una expedición.", "NEXUS")));
+        nav.Controls.Add(NavButton("▣   Continuar / partidas", false, () => ShowSavedGames(true)));
+        nav.Controls.Add(NavButton("⚙   Configuración SQL", false, InitializeDatabase));
+        nav.Controls.Add(NavButton("▥   Estadísticas", false, ShowStatistics));
         nav.Controls.Add(NavButton("◇   Realidades", false, () => MessageBox.Show("Seleccionarás la realidad al comenzar la expedición.", "NEXUS")));
         nav.Controls.Add(NavButton("⏻   Salir", false, Close));
         sidebar.Controls.Add(nav);
@@ -120,6 +122,104 @@ internal sealed class NexusForm : Form
         var footer = new Label { Text = "NEXUS SYSTEM v1.0     •     CONEXIÓN MULTIVERSAL ACTIVA", Dock = DockStyle.Bottom, Height = 34, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.FromArgb(130, 120, 170), Font = new Font("Segoe UI", 8, FontStyle.Bold), Padding = new Padding(24, 0, 0, 0) };
         page.Controls.Add(content); page.Controls.Add(sidebar); page.Controls.Add(top); page.Controls.Add(footer);
         ReplacePage(page);
+    }
+
+    private async void InitializeDatabase()
+    {
+        try
+        {
+            await persistence.InitializeAsync();
+            MessageBox.Show("La base NEXUS quedó creada/verificada. Ya puedes guardar expediciones.", "NEXUS · SQL Server", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("No se pudo inicializar SQL Server. Verifica que SQL Server Express esté iniciado y que la cuenta de Windows pueda crear la base NEXUS.\r\n\r\n" + ex.Message, "NEXUS · conexión SQL", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private async void ShowStatistics()
+    {
+        try
+        {
+            var games = await persistence.ListAsync();
+            int completed = games.Count(game => game.MissionProgress == 4);
+            string recent = games.Count == 0 ? "Todavía no hay partidas guardadas." : string.Join("\r\n", games.Take(8).Select(game => $"• {game.Name} — {game.Explorer} — {game.Reality} — {game.MissionProgress}/4 objetivos — {game.UpdatedAt.ToLocalTime():g}"));
+            MessageBox.Show($"Partidas guardadas: {games.Count}\r\nExpediciones con 4 objetivos: {completed}\r\n\r\n{recent}", "NEXUS · estadísticas", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("No se pudieron consultar las estadísticas. Inicializa la base de datos desde Configuración SQL.\r\n\r\n" + ex.Message, "NEXUS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private async Task SaveCurrentGameAsync()
+    {
+        using var promptDialog = new Form { Text = "Guardar expedición", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(410, 140), MaximizeBox = false, MinimizeBox = false, BackColor = Panel, ForeColor = Color.White };
+        var label = new Label { Text = "Nombre para esta partida", Left = 18, Top = 16, Width = 365, ForeColor = Color.White };
+        var name = new TextBox { Text = $"Expedición {DateTime.Now:yyyy-MM-dd HHmm}", Left = 18, Top = 43, Width = 365, BackColor = Color.FromArgb(29, 24, 59), ForeColor = Color.White };
+        var save = StyledButton("GUARDAR", Purple, Color.White, 120, 34); save.Left = 263; save.Top = 88; save.DialogResult = DialogResult.OK;
+        var cancel = StyledButton("CANCELAR", Color.FromArgb(30, 22, 58), Color.White, 120, 34); cancel.Left = 133; cancel.Top = 88; cancel.DialogResult = DialogResult.Cancel;
+        promptDialog.Controls.AddRange([label, name, cancel, save]); promptDialog.AcceptButton = save; promptDialog.CancelButton = cancel;
+        if (promptDialog.ShowDialog(this) != DialogResult.OK) return;
+        string saveName = name.Text.Trim();
+        if (saveName.Length is < 1 or > 80) { MessageBox.Show("El nombre debe tener entre 1 y 80 caracteres.", "NEXUS"); return; }
+
+        try
+        {
+            var snapshot = global::Program.CapturarPartida();
+            await persistence.SaveAsync(saveName, snapshot);
+            MessageBox.Show($"La expedición '{saveName}' se guardó correctamente en SQL Server.", "NEXUS · guardado", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("No se pudo guardar la partida. Si aún no lo hiciste, usa Configuración SQL en el menú principal.\r\n\r\n" + ex.Message, "NEXUS · guardado", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private async void ShowSavedGames(bool allowContinue)
+    {
+        try
+        {
+            var saves = await persistence.ListAsync();
+            if (saves.Count == 0) { MessageBox.Show("No hay partidas guardadas todavía.", "NEXUS"); return; }
+
+            using var dialog = new Form { Text = "Partidas NEXUS", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(690, 390), MinimizeBox = false, MaximizeBox = false, BackColor = Panel, ForeColor = Color.White };
+            var list = new ListBox { Left = 16, Top = 16, Width = 656, Height = 300, BackColor = Color.FromArgb(10, 9, 29), ForeColor = Color.White, Font = new Font("Segoe UI", 10) };
+            void RefreshList()
+            {
+                list.Items.Clear();
+                foreach (var game in saves) list.Items.Add($"{game.Name}  |  {game.Explorer}  |  {game.Reality}  |  {game.Energy} energía  |  {game.MissionProgress}/4  |  {game.UpdatedAt.ToLocalTime():g}");
+                if (list.Items.Count > 0) list.SelectedIndex = 0;
+            }
+            RefreshList();
+            SavedGame Selected() => list.SelectedIndex >= 0 && list.SelectedIndex < saves.Count ? saves[list.SelectedIndex] : null;
+            var close = StyledButton("CERRAR", Color.FromArgb(30, 22, 58), Color.White, 120, 36); close.Left = 536; close.Top = 330; close.DialogResult = DialogResult.Cancel;
+            var delete = StyledButton("ELIMINAR", Color.FromArgb(104, 27, 61), Color.White, 120, 36); delete.Left = 405; delete.Top = 330;
+            var continueButton = StyledButton("CONTINUAR", Purple, Color.White, 130, 36); continueButton.Left = 16; continueButton.Top = 330; continueButton.Enabled = allowContinue;
+            delete.Click += async (_, _) =>
+            {
+                var selected = Selected(); if (selected == null) return;
+                if (MessageBox.Show($"¿Eliminar la partida '{selected.Name}'?", "Confirmar eliminación", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+                try { await persistence.DeleteAsync(selected.Id); saves.Remove(selected); RefreshList(); if (saves.Count == 0) dialog.Close(); }
+                catch (Exception ex) { MessageBox.Show(ex.Message, "NEXUS", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            };
+            continueButton.Click += async (_, _) =>
+            {
+                var selected = Selected(); if (selected == null) return;
+                try
+                {
+                    var state = await persistence.LoadAsync(selected.Id);
+                    dialog.Tag = state; dialog.DialogResult = DialogResult.OK; dialog.Close();
+                }
+                catch (Exception ex) { MessageBox.Show("No se pudo recuperar la partida.\r\n\r\n" + ex.Message, "NEXUS", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            };
+            dialog.Controls.AddRange([list, continueButton, delete, close]); dialog.CancelButton = close;
+            if (dialog.ShowDialog(this) == DialogResult.OK && dialog.Tag is GameSnapshot snapshot) StartGame(snapshot);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("No se pudieron leer las partidas. Inicializa la base de datos desde Configuración SQL.\r\n\r\n" + ex.Message, "NEXUS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private void ShowExplorerRegistration()
@@ -231,7 +331,7 @@ internal sealed class NexusForm : Form
         panel.Controls.Add(number); return panel;
     }
 
-    private void StartGame()
+    private void StartGame(GameSnapshot restored = null)
     {
         AcceptButton = null;
         var page = new Panel { Dock = DockStyle.Fill, BackColor = Ink };
@@ -256,12 +356,29 @@ internal sealed class NexusForm : Form
         var entry = new Panel { Dock = DockStyle.Bottom, Height = 78, Padding = new Padding(16, 5, 16, 12), BackColor = Color.FromArgb(12, 10, 31) }; entry.Controls.Add(inputRow); entry.Controls.Add(prompt);
         var quick = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 48, Padding = new Padding(12, 5, 12, 5), BackColor = Color.FromArgb(12, 10, 31), WrapContents = false };
         AddQuickButton(quick, "↑ W", "w"); AddQuickButton(quick, "← A", "a"); AddQuickButton(quick, "↓ S", "s"); AddQuickButton(quick, "→ D", "d"); AddQuickButton(quick, "Inventario (I)", "i"); AddQuickButton(quick, "Misión (M)", "m"); AddQuickButton(quick, "Menú (Q)", "q");
+        var saveButton = StyledButton("Guardar partida", Color.FromArgb(41, 22, 83), Color.White, 150, 32);
+        saveButton.AutoSize = true; saveButton.Margin = new Padding(4, 2, 4, 2);
+        saveButton.Click += async (_, _) => await SaveCurrentGameAsync();
+        quick.Controls.Add(saveButton);
+        var voiceButton = StyledButton(IrisSpeechService.Enabled ? "Voz IRIS: ON" : "Voz IRIS: OFF", Color.FromArgb(31, 21, 62), Color.FromArgb(221, 208, 255), 115, 32);
+        voiceButton.AutoSize = true; voiceButton.Margin = new Padding(4, 2, 4, 2);
+        voiceButton.Click += (_, _) => voiceButton.Text = IrisSpeechService.Toggle() ? "Voz IRIS: ON" : "Voz IRIS: OFF";
+        quick.Controls.Add(voiceButton);
         page.Controls.Add(body); page.Controls.Add(entry); page.Controls.Add(quick); page.Controls.Add(title);
         ReplacePage(page);
 
         UiConsole.Attach(this);
-        global::Program.ConfigurarExploradorDesdeInterfaz(explorerName, selectedFemale, selectedAge, selectedFitness, selectedCharacter);
-        Append("NEXUS // CONEXIÓN ESTABLECIDA\r\nBienvenido, " + explorerName + ". Perfil registrado: " + (selectedFemale ? "MUJER" : "HOMBRE") + ", " + selectedAge + " años.\r\nPersonaje seleccionado: " + selectedCharacter + ".\r\n\r\n");
+        if (restored == null)
+        {
+            global::Program.ConfigurarExploradorDesdeInterfaz(explorerName, selectedFemale, selectedAge, selectedFitness, selectedCharacter);
+            Append("NEXUS // CONEXIÓN ESTABLECIDA\r\nBienvenido, " + explorerName + ". Perfil registrado: " + (selectedFemale ? "MUJER" : "HOMBRE") + ", " + selectedAge + " años.\r\nPersonaje seleccionado: " + selectedCharacter + ".\r\n\r\n");
+        }
+        else
+        {
+            explorerName = restored.ExplorerName;
+            global::Program.RestaurarPartida(restored);
+            Append("NEXUS // PARTIDA RECUPERADA\r\nExpedición de " + restored.ExplorerName + " · " + restored.Reality + " · energía " + restored.Energy + ".\r\n\r\n");
+        }
         var gameThread = new Thread(() => { try { global::Program.Main(); } catch (Exception ex) { UiConsole.WriteLine("\r\n[ERROR] " + ex.Message); } }) { IsBackground = true, Name = "NEXUS game" };
         gameThread.Start();
     }
@@ -346,7 +463,13 @@ internal static class UiConsole
     private static NexusForm form;
     internal static void Attach(NexusForm target) => form = target;
     internal static void Write(string value) => form?.Append(value);
-    internal static void WriteLine(string value = "") => form?.Append(value + Environment.NewLine);
+    internal static void WriteLine(string value = "")
+    {
+        form?.Append(value + Environment.NewLine);
+        string trimmed = value.TrimStart();
+        if (trimmed.StartsWith("IRIS >", StringComparison.OrdinalIgnoreCase))
+            IrisSpeechService.Speak(trimmed[6..].Trim());
+    }
     internal static string ReadLine() => form?.ReadUserInput() ?? "";
     internal static void Clear() => form?.ClearOutput();
 }

@@ -20,6 +20,8 @@ class Program
 
     static bool conectado = true;
     static bool perfilConfiguradoDesdeInterfaz;
+    static bool partidaRestaurada;
+    static int personajeSeleccionado = 1;
 
     static string[] realidades =
     {
@@ -40,6 +42,7 @@ class Program
     static int filaJugador = -1;
     static int columnaJugador = -1;
     static bool posicionIniciada = false;
+    static char[,] mapaExploracion;
 
     public static void Main()
     {
@@ -54,21 +57,20 @@ class Program
             SeleccionarPersonaje();
         }
 
-        SeleccionarRealidad();
-
-        InicializarMision();
-
-        EvaluacionInicial();
-
-        if (!conectado)
+        if (!partidaRestaurada)
         {
-            SalidaControlada();
-            return;
+            SeleccionarRealidad();
+            InicializarMision();
+            EvaluacionInicial();
+            if (!conectado)
+            {
+                SalidaControlada();
+                return;
+            }
+            IntroduccionNarrativa();
+            Pausa();
         }
-
-        IntroduccionNarrativa();
-
-        Pausa();
+        partidaRestaurada = false;
 
         while (conectado)
         {
@@ -165,8 +167,104 @@ class Program
             4 => new EnemigoRobot(nombre, false),
             _ => throw new ArgumentOutOfRangeException(nameof(personajeSeleccionado))
         };
+        Program.personajeSeleccionado = personajeSeleccionado;
         personaje.AplicarEstadisticas();
         perfilConfiguradoDesdeInterfaz = true;
+    }
+
+    public static GameSnapshot CapturarPartida()
+    {
+        if (personaje == null || string.IsNullOrWhiteSpace(nombre))
+            throw new InvalidOperationException("Inicia una expedición antes de guardarla.");
+
+        return new GameSnapshot
+        {
+            ExplorerName = nombre,
+            Gender = genero,
+            Age = edad,
+            Fitness = estadoFisico,
+            CharacterId = personajeSeleccionado,
+            CharacterHealth = personaje.Salud,
+            CharacterAttack = personaje.Ataque,
+            CharacterDefense = personaje.Defensa,
+            CharacterShield = personaje.Escudo,
+            Reality = realidad,
+            Energy = energia,
+            Connection = conexion,
+            Danger = peligro,
+            IrisInvestigations = investigacionesIRIS,
+            Resources = recursos,
+            IsConnected = conectado,
+            PositionRow = filaJugador,
+            PositionColumn = columnaJugador,
+            PositionInitialized = posicionIniciada,
+            MapRows = mapaExploracion == null ? Array.Empty<string>() : Enumerable.Range(0, mapaExploracion.GetLength(0)).Select(row => new string(Enumerable.Range(0, mapaExploracion.GetLength(1)).Select(column => mapaExploracion[row, column]).ToArray())).ToArray(),
+            MissionName = mision.Nombre,
+            AnomalyFound = mision.AnomaliaEncontrada,
+            CoreFound = mision.NucleoEncontrado,
+            EntityDefeated = mision.EntidadSuperada,
+            ExtractionComplete = mision.Extraccion,
+            MissionComplete = mision.Completada,
+            Experience = mision.Experiencia,
+            Inventory = inventario.Items.Select(item => new SavedInventoryItem { Name = item.Nombre, Type = item.Tipo.ToString(), Quantity = item.Cantidad }).ToList(),
+            Events = eventos.Select(item => new SavedGameEvent { Type = item.Tipo, Description = item.Descripcion, OccurredAt = item.Momento }).ToList()
+        };
+    }
+
+    public static void RestaurarPartida(GameSnapshot state)
+    {
+        if (state == null) throw new ArgumentNullException(nameof(state));
+        nombre = state.ExplorerName;
+        genero = state.Gender;
+        edad = state.Age;
+        estadoFisico = state.Fitness;
+        personajeSeleccionado = Math.Clamp(state.CharacterId, 1, 4);
+        personaje = personajeSeleccionado switch
+        {
+            1 => new Humano(nombre),
+            2 => new Robot(nombre, false),
+            3 => new Enemigo(nombre, false),
+            _ => new EnemigoRobot(nombre, false)
+        };
+        personaje.RestaurarEstado(state.CharacterHealth, state.CharacterAttack, state.CharacterDefense, state.CharacterShield);
+        realidad = state.Reality;
+        energia = state.Energy;
+        conexion = state.Connection;
+        peligro = state.Danger;
+        investigacionesIRIS = state.IrisInvestigations;
+        recursos = state.Resources;
+        conectado = state.IsConnected;
+        filaJugador = state.PositionRow;
+        columnaJugador = state.PositionColumn;
+        posicionIniciada = state.PositionInitialized;
+        mapaExploracion = state.MapRows is { Length: > 0 }
+            ? ToCharacterMap(state.MapRows)
+            : null;
+        mision = new Mision(string.IsNullOrWhiteSpace(state.MissionName) ? "LA ANOMALÍA PERDIDA" : state.MissionName)
+        {
+            AnomaliaEncontrada = state.AnomalyFound,
+            NucleoEncontrado = state.CoreFound,
+            EntidadSuperada = state.EntityDefeated,
+            Extraccion = state.ExtractionComplete,
+            Completada = state.MissionComplete,
+            Experiencia = state.Experience
+        };
+        inventario = new Inventario();
+        foreach (var item in state.Inventory ?? new List<SavedInventoryItem>())
+            if (Enum.TryParse(item.Type, out TipoObjeto type)) inventario.Agregar(new Objeto(item.Name, type, item.Quantity));
+        eventos = (state.Events ?? new List<SavedGameEvent>()).Select(item => new EventoNexus(item.Type, item.Description, item.OccurredAt)).ToList();
+        perfilConfiguradoDesdeInterfaz = true;
+        partidaRestaurada = true;
+    }
+
+    private static char[,] ToCharacterMap(string[] rows)
+    {
+        int width = rows.Max(row => row.Length);
+        var map = new char[rows.Length, width];
+        for (int row = 0; row < rows.Length; row++)
+            for (int column = 0; column < width; column++)
+                map[row, column] = column < rows[row].Length ? rows[row][column] : ' ';
+        return map;
     }
 
     // CONFIGURACIÓN
@@ -1109,10 +1207,10 @@ class Program
 
     static void ExploracionLibre()
     {
-        char[,] mapa =
-            CrearMapaSegunRealidad();
+        mapaExploracion ??= CrearMapaSegunRealidad();
+        char[,] mapa = mapaExploracion;
 
-        PrepararMisionEnMapa(mapa);
+        if (!posicionIniciada) PrepararMisionEnMapa(mapa);
 
         if (!posicionIniciada)
         {
@@ -4019,6 +4117,53 @@ class Program
     }
 }
 
+public sealed class GameSnapshot
+{
+    public string ExplorerName { get; set; } = "";
+    public string Gender { get; set; } = "";
+    public int Age { get; set; }
+    public int Fitness { get; set; }
+    public int CharacterId { get; set; }
+    public int CharacterHealth { get; set; }
+    public int CharacterAttack { get; set; }
+    public int CharacterDefense { get; set; }
+    public int CharacterShield { get; set; }
+    public string Reality { get; set; } = "";
+    public int Energy { get; set; }
+    public int Connection { get; set; }
+    public int Danger { get; set; }
+    public int IrisInvestigations { get; set; }
+    public int Resources { get; set; }
+    public bool IsConnected { get; set; }
+    public int PositionRow { get; set; }
+    public int PositionColumn { get; set; }
+    public bool PositionInitialized { get; set; }
+    public string[] MapRows { get; set; } = Array.Empty<string>();
+    public string MissionName { get; set; } = "LA ANOMALÍA PERDIDA";
+    public bool AnomalyFound { get; set; }
+    public bool CoreFound { get; set; }
+    public bool EntityDefeated { get; set; }
+    public bool ExtractionComplete { get; set; }
+    public bool MissionComplete { get; set; }
+    public int Experience { get; set; }
+    public List<SavedInventoryItem> Inventory { get; set; } = new();
+    public List<SavedGameEvent> Events { get; set; } = new();
+}
+
+public sealed class SavedInventoryItem
+{
+    public string Name { get; set; } = "";
+    public string Type { get; set; } = "";
+    public int Quantity { get; set; }
+}
+
+public sealed class SavedGameEvent
+{
+    public string Type { get; set; } = "";
+    public string Description { get; set; } = "";
+    public DateTime OccurredAt { get; set; }
+}
+
 
 // ============================================================
 // CLASE BASE: PERSONAJE
@@ -4071,6 +4216,14 @@ abstract class Personaje
 
     public virtual void AplicarEstadisticas()
     {
+    }
+
+    public void RestaurarEstado(int salud, int ataque, int defensa, int escudo)
+    {
+        Salud = Math.Clamp(salud, 0, 1000);
+        Ataque = Math.Clamp(ataque, 0, 1000);
+        Defensa = Math.Clamp(defensa, 0, 1000);
+        Escudo = Math.Clamp(escudo, 0, 1000);
     }
 
     public virtual void RecibirDanio(
@@ -4458,10 +4611,15 @@ class EventoNexus
     public EventoNexus(
         string tipo,
         string descripcion)
+        : this(tipo, descripcion, DateTime.Now)
+    {
+    }
+
+    public EventoNexus(string tipo, string descripcion, DateTime momento)
     {
         Tipo = tipo;
         Descripcion = descripcion;
-        Momento = DateTime.Now;
+        Momento = momento;
     }
 }
 
