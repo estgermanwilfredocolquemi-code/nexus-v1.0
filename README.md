@@ -1,16 +1,17 @@
 # NEXUS v1.0 — Programación II
 
-NEXUS es una aventura de consola de exploración multiversal. El jugador registra un explorador, elige perfil y realidad, investiga anomalías con IRIS, administra energía e inventario, afronta entidades y busca extraerse para completar “LA ANOMALÍA PERDIDA”. Este repositorio documenta la evolución desde el prototipo H3 hacia una experiencia gráfica de escritorio C# con Windows Forms y persistencia SQL Server.
+NEXUS es una aventura de exploración multiversal en C#/.NET 10. La solución conserva su versión de consola y añade una interfaz de escritorio Windows Forms que reutiliza el juego existente.
 
 ## Funcionalidades implementadas
 
-La versión del código fuente actual incluye flujo de registro y selección, perfiles Humano/Robot y entidades, cuatro realidades con mapas `char[,]`, exploración, encuentros, escaneo/IRIS, energía, conexión y peligro, inventario con tipos de objeto, objetivos de misión, eventos de sesión y extracción. Es una aplicación de consola; no incluye interfaz WinForms ni base SQL ni guardado persistente.
+Ambas interfaces incluyen el flujo de registro y selección, perfiles Humano/Robot y entidades, cuatro realidades con mapas `char[,]`, exploración, encuentros, escaneo/IRIS, energía, conexión y peligro, inventario con tipos de objeto, objetivos de misión, eventos de sesión y extracción. No incluye base SQL ni guardado persistente.
 
 ## Tecnologías y ejecución
 
-- C#/.NET; proyecto `nexus 3.csproj` con `net10.0`, salida de consola.
-- Visual Studio compatible con el SDK .NET 10 o SDK instalado, o CLI `dotnet`.
+- C#/.NET 10; solución `nexus v1.0.slnx` con proyectos de consola y Windows Forms.
+- Visual Studio con el SDK .NET 10 y la carga de trabajo **Desarrollo de escritorio de .NET**.
 - Desde la carpeta del proyecto: `dotnet run --project "nexus 3.csproj"`.
+- Para iniciar la interfaz en Visual Studio, selecciona el perfil compartido `NEXUS Windows Forms` en la barra de inicio.
 
 El runtime/SDK requerido debe estar instalado. No se necesita SQL Server para ejecutar el prototipo actual.
 
@@ -25,4 +26,4 @@ El runtime/SDK requerido debe estar instalado. No se necesita SQL Server para ej
 
 ## Estado y siguiente etapa
 
-La entrega actual es documental y de diseño. La siguiente implementación debe extraer las reglas de `Program.cs`, añadir proyectos/capas WinForms y SQL Server gradualmente y verificar cada recorrido contra el prototipo. Consultar [docs](docs/) antes de iniciar esa etapa.
+La solución comparte `Program.cs` entre las dos interfaces. `WindowsForms/ConsoleBridge.cs` adapta la entrada y salida del juego a los controles gráficos. Las capturas de laboratorio para H4.01 deben documentarse con fecha y hora reales; consulta `docs/evidencias/H4.01-guia-de-capturas.md`.

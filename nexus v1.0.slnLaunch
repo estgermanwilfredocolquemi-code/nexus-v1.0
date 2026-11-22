@@ -1,0 +1,11 @@
+[
+  {
+    "Name": "NEXUS Windows Forms",
+    "Projects": [
+      {
+        "Path": "WindowsForms\\NEXUS-WindowsForms.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

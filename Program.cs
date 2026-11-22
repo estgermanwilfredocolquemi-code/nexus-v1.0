@@ -19,6 +19,7 @@ class Program
     static int recursos = 0;
 
     static bool conectado = true;
+    static bool perfilConfiguradoDesdeInterfaz;
 
     static string[] realidades =
     {
@@ -40,17 +41,18 @@ class Program
     static int columnaJugador = -1;
     static bool posicionIniciada = false;
 
-    static void Main()
+    public static void Main()
     {
         Console.Title = "NEXUS SYSTEM v1.0";
 
         ConfigurarConsola();
 
-        InicioNexus();
-
-        RegistrarExplorador();
-
-        SeleccionarPersonaje();
+        if (!perfilConfiguradoDesdeInterfaz)
+        {
+            InicioNexus();
+            RegistrarExplorador();
+            SeleccionarPersonaje();
+        }
 
         SeleccionarRealidad();
 
@@ -137,6 +139,34 @@ class Program
         }
 
         SalidaControlada();
+    }
+
+    public static void ConfigurarExploradorDesdeInterfaz(
+        string nombreExplorador,
+        bool esMujer,
+        int edadExplorador,
+        int condicionFisica,
+        int personajeSeleccionado)
+    {
+        if (string.IsNullOrWhiteSpace(nombreExplorador))
+            throw new ArgumentException("El nombre del explorador no puede estar vacío.", nameof(nombreExplorador));
+
+        nombre = nombreExplorador.Trim();
+        genero = esMujer ? "Femenino / Mujer" : "Masculino / Hombre";
+        edad = Math.Clamp(edadExplorador, 1, 100);
+        estadoFisico = Math.Clamp(condicionFisica, 0, 100);
+        energia = estadoFisico;
+
+        personaje = personajeSeleccionado switch
+        {
+            1 => new Humano(nombre),
+            2 => new Robot(nombre, false),
+            3 => new Enemigo(nombre, false),
+            4 => new EnemigoRobot(nombre, false),
+            _ => throw new ArgumentOutOfRangeException(nameof(personajeSeleccionado))
+        };
+        personaje.AplicarEstadisticas();
+        perfilConfiguradoDesdeInterfaz = true;
     }
 
     // CONFIGURACIÓN
