@@ -25,7 +25,7 @@ jobs:
         shell: pwsh
         run: |
           $exclude = @('.git', '.vs', 'bin', 'obj')
-          $items = Get-ChildItem -Force | Where-Object { $exclude -notcontains $_.Name }
+          $items = Get-ChildItem -Force | Where-Object { $exclude -notcontains $_.Name -and $_.Extension -ne '.zip' }
           Compress-Archive -Path $items.FullName -DestinationPath "$env:RUNNER_TEMP/NEXUS-v1.0-JARVIS.zip" -Force
       - name: Upload ZIP artifact
         if: success()
