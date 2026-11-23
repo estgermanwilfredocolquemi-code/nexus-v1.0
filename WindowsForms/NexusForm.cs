@@ -37,6 +37,7 @@ internal sealed class NexusForm : Form
     private Button jarvisButton;
     private Form jarvisWindow;
     private bool jarvisActive;
+    private bool awaitingPause;
 
     public NexusForm()
     {
@@ -502,15 +503,22 @@ internal sealed class NexusForm : Form
     internal string ReadUserInput()
     {
         if (closing) return "";
-        Ui(() => { prompt.Text = "NEXUS solicita una respuesta — escribe y pulsa Enter."; input.Focus(); });
+        Ui(() => { prompt.Text = awaitingPause ? "Pulsa Enter para continuar o usa un botón de acción." : "NEXUS solicita una respuesta — escribe y pulsa Enter."; input.Focus(); });
         while (true)
         {
             if (closing) return "";
             lock (inputLock)
             {
+                if (awaitingPause && submitted.Count > 0 && submitted.Peek().Length > 0)
+                {
+                    // Un botón de acción no debe perderse en la pausa de "pulsa ENTER".
+                    awaitingPause = false;
+                    return "";
+                }
                 if (submitted.Count > 0)
                 {
                     string line = submitted.Dequeue();
+                    if (awaitingPause) awaitingPause = false;
                     if (submitted.Count == 0) inputReady.Reset();
                     return line;
                 }
@@ -523,6 +531,8 @@ internal sealed class NexusForm : Form
     internal void Append(string text)
     {
         if (closing || IsDisposed) return;
+        if (!string.IsNullOrEmpty(text) && (text.Contains("Presiona ENTER para continuar", StringComparison.OrdinalIgnoreCase) || text.Contains("Pulsa una tecla para continuar", StringComparison.OrdinalIgnoreCase)))
+            awaitingPause = true;
         Ui(() => { output.AppendText(text); output.SelectionStart = output.TextLength; output.ScrollToCaret(); });
     }
 
