@@ -434,6 +434,8 @@ internal sealed class NexusForm : Form
         ask.Dock = DockStyle.Right;
         void AskJarvis()
         {
+            try { snapshot = global::Program.CapturarPartida(); report.Text = JarvisAssistant.BuildInventoryReport(snapshot); }
+            catch (Exception ex) { answer.Text = "No pude actualizar el estado de la expedición: " + ex.Message; return; }
             string reply = JarvisAssistant.Answer(snapshot, question.Text);
             answer.Text = reply;
             IrisSpeechService.Speak(reply);
@@ -447,9 +449,12 @@ internal sealed class NexusForm : Form
         var responsePanel = new Panel { Dock = DockStyle.Bottom, Height = 125, Padding = new Padding(12, 8, 12, 8), BackColor = Color.FromArgb(12, 10, 31) };
         responsePanel.Controls.Add(answer); responsePanel.Controls.Add(inputRow);
         var footer = new Panel { Dock = DockStyle.Bottom, Height = 48, Padding = new Padding(12, 5, 12, 5), BackColor = Color.FromArgb(12, 10, 31) };
+        var refresh = StyledButton("ACTUALIZAR DATOS", Color.FromArgb(31, 65, 92), Color.White, 170, 34);
+        refresh.Dock = DockStyle.Left;
+        refresh.Click += (_, _) => { try { snapshot = global::Program.CapturarPartida(); report.Text = JarvisAssistant.BuildInventoryReport(snapshot); answer.Text = "Datos actualizados desde la expedición activa."; } catch (Exception ex) { answer.Text = ex.Message; } };
         var close = StyledButton("DESACTIVAR J.A.R.V.I.S.", Color.FromArgb(92, 30, 65), Color.White, 210, 34);
         close.Dock = DockStyle.Right; close.Click += (_, _) => dialog.Close();
-        footer.Controls.Add(close);
+        footer.Controls.Add(close); footer.Controls.Add(refresh);
         dialog.Controls.Add(report); dialog.Controls.Add(responsePanel); dialog.Controls.Add(footer); dialog.Controls.Add(header);
         dialog.FormClosed += (_, _) =>
         {
