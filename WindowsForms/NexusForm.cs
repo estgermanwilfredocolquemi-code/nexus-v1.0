@@ -34,6 +34,9 @@ internal sealed class NexusForm : Form
     private System.Windows.Forms.Timer loadingTimer;
     private NexusProgressBar loadingBar;
     private Label loadingLabel;
+    private Button jarvisButton;
+    private Form jarvisWindow;
+    private bool jarvisActive;
 
     public NexusForm()
     {
@@ -354,8 +357,9 @@ internal sealed class NexusForm : Form
         var send = StyledButton("Enviar", Purple, Color.White, 105, 36); send.Dock = DockStyle.Right; send.Click += (_, _) => SubmitInput();
         var inputRow = new Panel { Dock = DockStyle.Top, Height = 42, Padding = new Padding(0, 4, 0, 0) }; inputRow.Controls.Add(input); inputRow.Controls.Add(send);
         var entry = new Panel { Dock = DockStyle.Bottom, Height = 78, Padding = new Padding(16, 5, 16, 12), BackColor = Color.FromArgb(12, 10, 31) }; entry.Controls.Add(inputRow); entry.Controls.Add(prompt);
-        var quick = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 48, Padding = new Padding(12, 5, 12, 5), BackColor = Color.FromArgb(12, 10, 31), WrapContents = false };
-        AddQuickButton(quick, "↑ W", "w"); AddQuickButton(quick, "← A", "a"); AddQuickButton(quick, "↓ S", "s"); AddQuickButton(quick, "→ D", "d"); AddQuickButton(quick, "Inventario (I)", "i"); AddQuickButton(quick, "Misión (M)", "m"); AddQuickButton(quick, "Menú (Q)", "q");
+        var quick = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 82, Padding = new Padding(12, 5, 12, 5), BackColor = Color.FromArgb(12, 10, 31), WrapContents = true, AutoScroll = true };
+        AddQuickButton(quick, "↑ W · explorar", "w"); AddQuickButton(quick, "← A · explorar", "a"); AddQuickButton(quick, "↓ S · explorar", "s"); AddQuickButton(quick, "→ D · explorar", "d"); AddQuickButton(quick, "Inventario · explorar", "i"); AddQuickButton(quick, "Misión · explorar", "m"); AddQuickButton(quick, "Salir de explorar", "q");
+        AddQuickButton(quick, "Menú: explorar [1]", "1"); AddQuickButton(quick, "Menú: IRIS [2]", "2"); AddQuickButton(quick, "Menú: estado [3]", "3"); AddQuickButton(quick, "Menú: energía [4]", "4"); AddQuickButton(quick, "Menú: escanear [5]", "5"); AddQuickButton(quick, "Menú: mapa [6]", "6"); AddQuickButton(quick, "Menú: comunicación [7]", "7"); AddQuickButton(quick, "Menú: historia [8]", "8"); AddQuickButton(quick, "Menú: IRIS [0]", "0"); AddQuickButton(quick, "Menú: desconectar [9]", "9");
         var saveButton = StyledButton("Guardar partida", Color.FromArgb(41, 22, 83), Color.White, 150, 32);
         saveButton.AutoSize = true; saveButton.Margin = new Padding(4, 2, 4, 2);
         saveButton.Click += async (_, _) => await SaveCurrentGameAsync();
@@ -364,6 +368,10 @@ internal sealed class NexusForm : Form
         voiceButton.AutoSize = true; voiceButton.Margin = new Padding(4, 2, 4, 2);
         voiceButton.Click += (_, _) => voiceButton.Text = IrisSpeechService.Toggle() ? "Voz IRIS: ON" : "Voz IRIS: OFF";
         quick.Controls.Add(voiceButton);
+        jarvisButton = StyledButton("J.A.R.V.I.S. · ACTIVAR", Color.FromArgb(15, 100, 112), Color.White, 170, 32);
+        jarvisButton.AutoSize = true; jarvisButton.Margin = new Padding(4, 2, 4, 2);
+        jarvisButton.Click += (_, _) => ToggleJarvis();
+        quick.Controls.Add(jarvisButton);
         page.Controls.Add(body); page.Controls.Add(entry); page.Controls.Add(quick); page.Controls.Add(title);
         ReplacePage(page);
 
@@ -381,6 +389,75 @@ internal sealed class NexusForm : Form
         }
         var gameThread = new Thread(() => { try { global::Program.Main(); } catch (Exception ex) { UiConsole.WriteLine("\r\n[ERROR] " + ex.Message); } }) { IsBackground = true, Name = "NEXUS game" };
         gameThread.Start();
+    }
+
+
+    private void ToggleJarvis()
+    {
+        if (jarvisActive)
+        {
+            jarvisWindow?.Close();
+            return;
+        }
+
+        GameSnapshot snapshot;
+        try { snapshot = global::Program.CapturarPartida(); }
+        catch (Exception ex)
+        {
+            MessageBox.Show("J.A.R.V.I.S. necesita una expedición activa para analizar tus datos.\\r\\n" + ex.Message, "NEXUS · J.A.R.V.I.S.", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        jarvisActive = true;
+        if (jarvisButton != null) jarvisButton.Text = "J.A.R.V.I.S. · DESACTIVAR";
+
+        var dialog = new Form
+        {
+            Text = "J.A.R.V.I.S. // ASISTENTE TÁCTICO",
+            StartPosition = FormStartPosition.CenterParent,
+            Size = new Size(760, 610),
+            MinimumSize = new Size(680, 540),
+            BackColor = Color.FromArgb(7, 8, 22),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 9)
+        };
+        jarvisWindow = dialog;
+
+        var header = new Panel { Dock = DockStyle.Top, Height = 76, BackColor = Color.FromArgb(13, 19, 43), Padding = new Padding(20, 10, 20, 8) };
+        header.Controls.Add(new Label { Text = "J.A.R.V.I.S.", Dock = DockStyle.Top, Height = 34, ForeColor = Color.FromArgb(89, 225, 255), Font = new Font("Segoe UI", 17, FontStyle.Bold) });
+        header.Controls.Add(new Label { Text = "ASISTENTE TÁCTICO LOCAL · ANÁLISIS DE INVENTARIO Y SUPERVIVENCIA", Dock = DockStyle.Bottom, Height = 22, ForeColor = Color.FromArgb(188, 202, 230), Font = new Font("Segoe UI", 8, FontStyle.Bold) });
+
+        var report = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = Color.FromArgb(10, 13, 32), ForeColor = Color.FromArgb(225, 235, 255), Font = new Font("Cascadia Mono", 10), Padding = new Padding(14), Text = JarvisAssistant.BuildInventoryReport(snapshot) };
+        var answer = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, BackColor = Color.FromArgb(17, 20, 43), ForeColor = Color.FromArgb(125, 235, 255), Font = new Font("Segoe UI", 10), Text = "J.A.R.V.I.S. en línea. Puedo revisar tu inventario, salud, energía, peligro y recomendar una estrategia." };
+        var question = new TextBox { Dock = DockStyle.Fill, BackColor = Color.FromArgb(24, 20, 47), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Font = new Font("Segoe UI", 10), PlaceholderText = "Ej.: ¿Qué me recomiendas antes de combatir?" };
+        var ask = StyledButton("CONSULTAR", Color.FromArgb(15, 100, 112), Color.White, 125, 36);
+        ask.Dock = DockStyle.Right;
+        void AskJarvis()
+        {
+            string reply = JarvisAssistant.Answer(snapshot, question.Text);
+            answer.Text = reply;
+            IrisSpeechService.Speak(reply);
+            question.Clear();
+        }
+        ask.Click += (_, _) => AskJarvis();
+        question.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { AskJarvis(); e.SuppressKeyPress = true; } };
+
+        var inputRow = new Panel { Dock = DockStyle.Bottom, Height = 48, Padding = new Padding(0, 5, 0, 0) };
+        inputRow.Controls.Add(question); inputRow.Controls.Add(ask);
+        var responsePanel = new Panel { Dock = DockStyle.Bottom, Height = 125, Padding = new Padding(12, 8, 12, 8), BackColor = Color.FromArgb(12, 10, 31) };
+        responsePanel.Controls.Add(answer); responsePanel.Controls.Add(inputRow);
+        var footer = new Panel { Dock = DockStyle.Bottom, Height = 48, Padding = new Padding(12, 5, 12, 5), BackColor = Color.FromArgb(12, 10, 31) };
+        var close = StyledButton("DESACTIVAR J.A.R.V.I.S.", Color.FromArgb(92, 30, 65), Color.White, 210, 34);
+        close.Dock = DockStyle.Right; close.Click += (_, _) => dialog.Close();
+        footer.Controls.Add(close);
+        dialog.Controls.Add(report); dialog.Controls.Add(responsePanel); dialog.Controls.Add(footer); dialog.Controls.Add(header);
+        dialog.FormClosed += (_, _) =>
+        {
+            jarvisActive = false;
+            jarvisWindow = null;
+            if (jarvisButton != null && !jarvisButton.IsDisposed) jarvisButton.Text = "J.A.R.V.I.S. · ACTIVAR";
+        };
+        dialog.Show(this);
     }
 
     private static Image LoadArtwork(string imagePath)
