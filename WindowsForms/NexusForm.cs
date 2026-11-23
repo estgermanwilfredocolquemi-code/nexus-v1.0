@@ -25,6 +25,9 @@ internal sealed class NexusForm : Form
     private int selectedAge = 18;
     private int selectedFitness = 80;
     private int selectedCharacter = 1;
+    private int selectedWorld = 1;
+    private bool classicMode;
+    private AdventureGameControl activeAdventure;
     private readonly NexusPersistence persistence = new();
     private volatile bool closing;
     private readonly string splashPath = Path.Combine(AppContext.BaseDirectory, "nexus-splash.png");
@@ -85,6 +88,9 @@ internal sealed class NexusForm : Form
 
     private void ShowHub()
     {
+        KeyDown -= ForwardAdventureKey;
+        activeAdventure = null;
+        KeyPreview = false;
         loadingTimer?.Stop();
         AcceptButton = null;
         var page = new Panel { Dock = DockStyle.Fill, BackColor = Ink };
@@ -93,7 +99,7 @@ internal sealed class NexusForm : Form
         var topInfo = new Label { Text = "CENTRO DE OPERACIONES     ◆     SISTEMA IRIS ACTIVO", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight, ForeColor = Cyan, Font = new Font("Segoe UI", 9, FontStyle.Bold) };
         top.Controls.Add(topInfo); top.Controls.Add(logo);
 
-        var sidebar = new Panel { Dock = DockStyle.Left, Width = 220, BackColor = Color.FromArgb(12, 10, 31), Padding = new Padding(18, 22, 18, 18) };
+        var sidebar = new Panel { Dock = DockStyle.Left, Width = 250, BackColor = Color.FromArgb(12, 10, 31), Padding = new Padding(18, 22, 18, 18) };
         var nav = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Color.Transparent };
         var player = new Label { Text = "EXPLORADOR", Height = 26, Width = 180, ForeColor = Color.FromArgb(190, 180, 225), Font = new Font("Segoe UI", 9, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
         var name = new TextBox { Width = 180, Height = 34, Font = new Font("Segoe UI", 11), Text = explorerName, BackColor = Color.FromArgb(29, 24, 59), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, PlaceholderText = "Escribe tu nombre" };
@@ -102,12 +108,19 @@ internal sealed class NexusForm : Form
         {
             if (string.IsNullOrWhiteSpace(name.Text)) { MessageBox.Show("Escribe el nombre de tu explorador para continuar.", "NEXUS"); name.Focus(); return; }
             explorerName = name.Text.Trim();
+            classicMode = false;
             ShowExplorerRegistration();
         }));
-        nav.Controls.Add(NavButton("▣   Continuar / partidas", false, () => ShowSavedGames(true)));
+        nav.Controls.Add(NavButton("▣   Continuar / aventura", false, ShowAdventureSaves));
+        nav.Controls.Add(NavButton("◇   NEXUS v1.0 clásico", false, () =>
+        {
+            if (string.IsNullOrWhiteSpace(name.Text)) { MessageBox.Show("Escribe el nombre de tu explorador para continuar.", "NEXUS"); name.Focus(); return; }
+            explorerName = name.Text.Trim(); classicMode = true; ShowExplorerRegistration();
+        }));
+        nav.Controls.Add(NavButton("▣   Expediciones SQL", false, () => ShowSavedGames(true)));
         nav.Controls.Add(NavButton("⚙   Configuración SQL", false, InitializeDatabase));
         nav.Controls.Add(NavButton("▥   Estadísticas", false, ShowStatistics));
-        nav.Controls.Add(NavButton("◇   Realidades", false, () => MessageBox.Show("Seleccionarás la realidad al comenzar la expedición.", "NEXUS")));
+        nav.Controls.Add(NavButton("◇   Realidades", false, () => MessageBox.Show("La aventura recorre las cuatro realidades de Nexus: Tierra-01, Tierra-02, Tierra-07 y Nexus-09.", "NEXUS")));
         nav.Controls.Add(NavButton("⏻   Salir", false, Close));
         sidebar.Controls.Add(nav);
 
@@ -288,11 +301,43 @@ internal sealed class NexusForm : Form
         back.Dock = DockStyle.Left; back.Click += (_, _) => ShowExplorerRegistration();
         var confirm = StyledButton("CONFIRMAR PERSONAJE  ✓", Purple, Color.White, 270, 42);
         confirm.Dock = DockStyle.Right;
-        confirm.Click += (_, _) => StartGame();
+        confirm.Click += (_, _) => { if (classicMode) StartGame(); else ShowWorldSelection(); };
         footer.Controls.Add(confirm); footer.Controls.Add(back);
         page.Controls.Add(cards); page.Controls.Add(footer); page.Controls.Add(header);
         ReplacePage(page);
         AcceptButton = confirm;
+    }
+
+    private void ShowWorldSelection()
+    {
+        var page = new Panel { Dock = DockStyle.Fill, BackColor = Ink, BackgroundImage = LoadArtwork(hubPath), BackgroundImageLayout = ImageLayout.Stretch };
+        page.Controls.Add(MakeSectionHeader("SELECCIONA UNA REALIDAD", "Cada dimensión tiene su propio mapa, terreno y enemigos. Puedes comenzar por cualquiera de las cuatro."));
+        var worlds = new (string Name, string Description, Color Accent)[]
+        {
+            ("TIERRA-01 · BOSQUE VIVO", "Bosques, río, refugio y ruinas antiguas.", Color.FromArgb(86, 200, 121)),
+            ("TIERRA-02 · ZONA ZOMBI", "Calles destruidas, edificios evacuados y robots infectados.", Color.FromArgb(212, 127, 81)),
+            ("TIERRA-07 · FRONTERA CRIOGÉNICA", "Glaciares, pasos helados y una estación científica.", Color.FromArgb(103, 197, 235)),
+            ("NEXUS-09 · CIUDAD DIGITAL", "Avenidas de neón, barreras de datos y la ciudad central.", Color.FromArgb(166, 117, 255))
+        };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Padding = new Padding(36, 88, 36, 82), BackColor = Color.FromArgb(212, 6, 8, 27) };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        for (int i = 0; i < worlds.Length; i++)
+        {
+            int world = i + 1; var item = worlds[i];
+            var card = new Panel { Dock = DockStyle.Fill, BackColor = selectedWorld == world ? item.Accent : Color.FromArgb(44, 39, 74), Padding = new Padding(2), Margin = new Padding(10) };
+            var surface = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(13, 14, 35), Padding = new Padding(18), Cursor = Cursors.Hand };
+            var name = new Label { Text = item.Name, Dock = DockStyle.Top, Height = 42, ForeColor = item.Accent, Font = new Font("Segoe UI", 13, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
+            var description = new Label { Text = item.Description, Dock = DockStyle.Fill, ForeColor = Color.FromArgb(226, 221, 244), Font = new Font("Segoe UI", 11), TextAlign = ContentAlignment.MiddleLeft };
+            var choose = StyledButton(selectedWorld == world ? "DIMENSIÓN ELEGIDA ✓" : "ELEGIR ESTA DIMENSIÓN", Color.FromArgb(41, 30, 82), Color.White, 260, 40); choose.Dock = DockStyle.Bottom;
+            void SelectWorld() { selectedWorld = world; ShowWorldSelection(); }
+            choose.Click += (_, _) => SelectWorld(); surface.Click += (_, _) => SelectWorld(); name.Click += (_, _) => SelectWorld(); description.Click += (_, _) => SelectWorld();
+            surface.Controls.Add(description); surface.Controls.Add(choose); surface.Controls.Add(name); card.Controls.Add(surface); grid.Controls.Add(card, i % 2, i / 2);
+        }
+        var footer = new Panel { Dock = DockStyle.Bottom, Height = 64, BackColor = Color.FromArgb(235, 8, 7, 26), Padding = new Padding(20, 10, 20, 10) };
+        var back = StyledButton("← PERSONAJE", Color.FromArgb(30, 22, 58), Color.White, 165, 42); back.Dock = DockStyle.Left; back.Click += (_, _) => ShowCharacterSelection();
+        var start = StyledButton("COMENZAR EN ESTA REALIDAD  →", Purple, Color.White, 330, 42); start.Dock = DockStyle.Right; start.Click += (_, _) => StartAdventure(null, selectedWorld);
+        footer.Controls.Add(start); footer.Controls.Add(back); page.Controls.Add(grid); page.Controls.Add(footer); ReplacePage(page); AcceptButton = start;
     }
 
     private void AddCharacterCard(TableLayoutPanel grid, int column, int characterId, string name, string description, string imageName, Color accent)
@@ -332,6 +377,16 @@ internal sealed class NexusForm : Form
     }
 
     private void StartGame(GameSnapshot restored = null)
+    {
+        if (restored == null && !classicMode)
+        {
+            StartAdventure(null, selectedWorld);
+            return;
+        }
+        StartClassicGame(restored);
+    }
+
+    private void StartClassicGame(GameSnapshot restored)
     {
         AcceptButton = null;
         var page = new Panel { Dock = DockStyle.Fill, BackColor = Ink };
@@ -383,6 +438,57 @@ internal sealed class NexusForm : Form
         gameThread.Start();
     }
 
+    private void ShowAdventureSaves()
+    {
+        var saves = AdventureGameControl.ListSaves();
+        if (saves.Count == 0)
+        {
+            MessageBox.Show("Todavía no hay partidas de aventura guardadas. Pulsa JUGAR para comenzar y usa Guardar dentro del juego.", "NEXUS · partidas");
+            return;
+        }
+        using var dialog = new Form { Text = "PARTIDAS DE AVENTURA", StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, ClientSize = new Size(690, 390), BackColor = Panel, ForeColor = Color.White, MaximizeBox = false, MinimizeBox = false };
+        var list = new ListBox { Left = 16, Top = 16, Width = 656, Height = 300, BackColor = Color.FromArgb(10, 9, 29), ForeColor = Color.White, Font = new Font("Segoe UI", 10) };
+        void RefreshList()
+        {
+            list.Items.Clear();
+            foreach (var save in saves) list.Items.Add($"{save.Name}  |  {save.Explorer}  |  {save.Updated:g}");
+            if (list.Items.Count > 0) list.SelectedIndex = 0;
+        }
+        RefreshList();
+        var load = StyledButton("CONTINUAR", Purple, Color.White, 130, 36); load.Left = 16; load.Top = 330;
+        var delete = StyledButton("ELIMINAR", Color.FromArgb(104, 27, 61), Color.White, 120, 36); delete.Left = 405; delete.Top = 330;
+        var cancel = StyledButton("CERRAR", Color.FromArgb(30, 22, 58), Color.White, 120, 36); cancel.Left = 536; cancel.Top = 330; cancel.DialogResult = DialogResult.Cancel;
+        load.Click += (_, _) => { if (list.SelectedIndex < 0 || list.SelectedIndex >= saves.Count) return; dialog.Tag = saves[list.SelectedIndex].Name; dialog.DialogResult = DialogResult.OK; dialog.Close(); };
+        delete.Click += (_, _) =>
+        {
+            if (list.SelectedIndex < 0 || list.SelectedIndex >= saves.Count) return;
+            string saveName = saves[list.SelectedIndex].Name;
+            if (MessageBox.Show($"¿Eliminar la partida '{saveName}'?", "NEXUS", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+            AdventureGameControl.DeleteSave(saveName); saves.RemoveAt(list.SelectedIndex); RefreshList(); if (saves.Count == 0) dialog.Close();
+        };
+        dialog.Controls.AddRange([list, load, delete, cancel]); dialog.CancelButton = cancel;
+        if (dialog.ShowDialog(this) == DialogResult.OK && dialog.Tag is string saveName)
+        {
+            var saved = AdventureGameControl.LoadSave(saveName);
+            if (saved != null) StartAdventure(saved, saved.World);
+        }
+    }
+
+    private void StartAdventure(AdventureGameControl.SaveData saved, int world)
+    {
+        AcceptButton = null;
+        selectedWorld = Math.Clamp(world, 1, 4);
+        var adventure = new AdventureGameControl(explorerName, selectedFemale, selectedCharacter, ShowHub, saved, selectedWorld);
+        activeAdventure = adventure;
+        KeyDown -= ForwardAdventureKey;
+        KeyPreview = true;
+        KeyDown += ForwardAdventureKey;
+        ReplacePage(adventure);
+        adventure.FocusGame();
+    }
+
+    private void ForwardAdventureKey(object sender, KeyEventArgs e) => activeAdventure?.ProcessGameKey(e);
+
     private static Image LoadArtwork(string imagePath)
     {
         if (!File.Exists(imagePath)) return null;
@@ -394,7 +500,7 @@ internal sealed class NexusForm : Form
 
     private static Button NavButton(string text, bool primary, Action action)
     {
-        var b = new Button { Text = text, Width = 184, Height = primary ? 48 : 42, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(12, 0, 0, 0), FlatStyle = FlatStyle.Flat, BackColor = primary ? Color.FromArgb(107, 24, 217) : Color.FromArgb(20, 16, 45), ForeColor = Color.White, Font = new Font("Segoe UI", primary ? 11 : 10, primary ? FontStyle.Bold : FontStyle.Regular), Margin = new Padding(0, 0, 0, 8), Cursor = Cursors.Hand };
+        var b = new Button { Text = text, Width = 210, Height = primary ? 48 : 42, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(12, 0, 0, 0), FlatStyle = FlatStyle.Flat, BackColor = primary ? Color.FromArgb(107, 24, 217) : Color.FromArgb(20, 16, 45), ForeColor = Color.White, Font = new Font("Segoe UI", primary ? 11 : 10, primary ? FontStyle.Bold : FontStyle.Regular), Margin = new Padding(0, 0, 0, 8), Cursor = Cursors.Hand };
         b.FlatAppearance.BorderColor = primary ? Purple : Color.FromArgb(57, 42, 100); b.Click += (_, _) => action(); return b;
     }
 
@@ -508,3 +614,4 @@ internal sealed class NexusProgressBar : Control
         e.Graphics.DrawRectangle(border, bounds);
     }
 }
+
