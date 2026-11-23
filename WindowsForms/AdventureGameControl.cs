@@ -398,7 +398,8 @@ internal sealed class AdventureGameControl : UserControl
             if (data.InDungeon && x == 1 && y == 7) DrawDoor(g, rect);
         }
         int px = data.InDungeon ? data.DungeonX : data.X, py = data.InDungeon ? data.DungeonY : data.Y;
-        DrawHero(g, new Rectangle(ox + px * tile + tile / 6, oy + py * tile + tile / 8, tile * 2 / 3, tile * 3 / 4));
+        int heroWidth = Math.Max(22, tile * 11 / 10), heroHeight = Math.Max(32, tile * 3 / 2);
+        DrawHero(g, new Rectangle(ox + px * tile + (tile - heroWidth) / 2, oy + (py + 1) * tile - heroHeight, heroWidth, heroHeight));
         using var titleFont = new Font("Segoe UI", 10, FontStyle.Bold);
         string title = data.InDungeon ? $"MAZMORRA · {WorldNames[data.World - 1]}" : WorldNames[data.World - 1];
         using var titleBrush = new SolidBrush(Color.FromArgb(230, 231, 244, 255));
@@ -489,11 +490,115 @@ internal sealed class AdventureGameControl : UserControl
     }
     private void DrawHero(Graphics g, Rectangle r)
     {
+        // Use a full-body sprite on the map; keep the portrait for combat panels.
+        if (r.Height < 80)
+        {
+            DrawMapCharacter(g, r);
+            return;
+        }
         if (heroPortrait != null) { g.DrawImage(heroPortrait, r); return; }
         using var shadow = new SolidBrush(Color.FromArgb(80, 0, 0, 0)); g.FillEllipse(shadow, r.Left, r.Bottom - r.Height / 5, r.Width, r.Height / 4);
         using var body = new SolidBrush(data.CharacterId == 2 ? Color.FromArgb(78, 185, 205) : Color.FromArgb(220, 231, 239)); g.FillEllipse(body, r.Left + r.Width / 5, r.Top + r.Height / 4, r.Width * 3 / 5, r.Height * 3 / 4);
         using var head = new SolidBrush(Color.FromArgb(227, 197, 168)); g.FillEllipse(head, r.Left + r.Width / 4, r.Top, r.Width / 2, r.Height / 3);
         using var visor = new SolidBrush(Color.FromArgb(46, 199, 242)); g.FillRectangle(visor, r.Left + r.Width / 3, r.Top + r.Height / 8, r.Width / 3, r.Height / 10);
+    }
+
+    private void DrawMapCharacter(Graphics g, Rectangle r)
+    {
+        var oldMode = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        float sx = r.Width / 32f, sy = r.Height / 44f;
+        float ox = r.Left, oy = r.Top;
+        RectangleF Box(float x, float y, float w, float h) => new(ox + x * sx, oy + y * sy, Math.Max(1, w * sx), Math.Max(1, h * sy));
+        using var outline = new Pen(Color.FromArgb(35, 27, 38), Math.Max(1f, sx * 1.4f));
+        using var shadow = new SolidBrush(Color.FromArgb(90, 3, 8, 14));
+        g.FillEllipse(shadow, Box(3, 38, 26, 5));
+
+        if (data.CharacterId is 2 or 4)
+        {
+            Color metal = data.CharacterId == 2 ? Color.FromArgb(65, 177, 194) : Color.FromArgb(177, 82, 77);
+            using var metalBrush = new SolidBrush(metal);
+            using var darkMetal = new SolidBrush(Color.FromArgb(45, 63, 82));
+            using var visor = new SolidBrush(Color.FromArgb(85, 231, 255));
+            FillRoundedRectangle(g, darkMetal, Box(6, 14, 20, 23), 5 * sx);
+            FillRoundedRectangle(g, metalBrush, Box(7, 17, 18, 20), 5 * sx);
+            g.FillEllipse(metalBrush, Box(7, 2, 18, 17));
+            g.DrawEllipse(outline, Box(7, 2, 18, 17));
+            FillRoundedRectangle(g, visor, Box(10, 8, 12, 4), 2 * sx);
+            FillRoundedRectangle(g, darkMetal, Box(7, 35, 8, 7), 2 * sx);
+            FillRoundedRectangle(g, darkMetal, Box(18, 35, 8, 7), 2 * sx);
+            using var joint = new SolidBrush(Color.FromArgb(222, 190, 102));
+            g.FillEllipse(joint, Box(5, 19, 5, 7)); g.FillEllipse(joint, Box(22, 19, 5, 7));
+            g.SmoothingMode = oldMode;
+            return;
+        }
+
+        bool female = data.Female;
+        Color hairColor = female ? Color.FromArgb(85, 42, 35) : Color.FromArgb(35, 31, 42);
+        Color jacket = data.CharacterId == 3 ? Color.FromArgb(162, 51, 66) : Color.FromArgb(38, 113, 157);
+        using var hair = new SolidBrush(hairColor);
+        using var skin = new SolidBrush(Color.FromArgb(229, 180, 143));
+        using var coat = new SolidBrush(jacket);
+        using var coatShade = new SolidBrush(Color.FromArgb(25, 47, 77));
+        using var shirt = new SolidBrush(Color.FromArgb(230, 236, 237));
+        using var trousers = new SolidBrush(Color.FromArgb(42, 52, 70));
+        using var boot = new SolidBrush(Color.FromArgb(30, 35, 46));
+        using var pack = new SolidBrush(Color.FromArgb(193, 117, 51));
+        using var trim = new SolidBrush(Color.FromArgb(83, 218, 226));
+        using var eye = new SolidBrush(Color.FromArgb(33, 37, 48));
+
+        FillRoundedRectangle(g, pack, Box(22, 17, 7, 16), 3 * sx); DrawRoundedRectangle(g, outline, Box(22, 17, 7, 16), 3 * sx);
+        FillRoundedRectangle(g, trousers, Box(9, 30, 7, 10), 2 * sx);
+        FillRoundedRectangle(g, trousers, Box(17, 30, 7, 10), 2 * sx);
+        FillRoundedRectangle(g, boot, Box(7, 38, 10, 4), 2 * sx);
+        FillRoundedRectangle(g, boot, Box(16, 38, 11, 4), 2 * sx);
+        DrawRoundedRectangle(g, outline, Box(9, 30, 7, 10), 2 * sx);
+        DrawRoundedRectangle(g, outline, Box(17, 30, 7, 10), 2 * sx);
+        FillRoundedRectangle(g, coatShade, Box(4, 18, 7, 15), 3 * sx);
+        FillRoundedRectangle(g, coatShade, Box(21, 18, 7, 15), 3 * sx);
+        g.FillEllipse(skin, Box(4, 29, 7, 6)); g.FillEllipse(skin, Box(21, 29, 7, 6));
+        FillRoundedRectangle(g, skin, Box(13, 14, 7, 6), 2 * sx);
+        g.FillPolygon(coat, new[] { new PointF(ox + 10 * sx, oy + 18 * sy), new PointF(ox + 22 * sx, oy + 18 * sy), new PointF(ox + 25 * sx, oy + 31 * sy), new PointF(ox + 7 * sx, oy + 31 * sy) });
+        g.DrawLine(outline, ox + 10 * sx, oy + 19 * sy, ox + 8 * sx, oy + 30 * sy);
+        g.DrawLine(outline, ox + 22 * sx, oy + 19 * sy, ox + 24 * sx, oy + 30 * sy);
+        g.FillPolygon(shirt, new[] { new PointF(ox + 14 * sx, oy + 19 * sy), new PointF(ox + 18 * sx, oy + 19 * sy), new PointF(ox + 19 * sx, oy + 30 * sy), new PointF(ox + 13 * sx, oy + 30 * sy) });
+        FillRoundedRectangle(g, trim, Box(15, 21, 2, 7), sx);
+        g.DrawLine(outline, ox + 10 * sx, oy + 30 * sy, ox + 22 * sx, oy + 30 * sy);
+        g.FillEllipse(skin, Box(9, 2, 14, 16));
+        g.DrawEllipse(outline, Box(9, 2, 14, 16));
+        g.FillEllipse(hair, Box(8, 0, 16, 10));
+        g.FillPolygon(hair, new[] { new PointF(ox + 9 * sx, oy + 5 * sy), new PointF(ox + 16 * sx, oy + 2 * sy), new PointF(ox + 14 * sx, oy + 8 * sy), new PointF(ox + 10 * sx, oy + 9 * sy) });
+        if (female) g.FillEllipse(hair, Box(20, 6, 5, 14));
+        g.FillEllipse(eye, Box(12, 9, 1.8f, 2)); g.FillEllipse(eye, Box(19, 9, 1.8f, 2));
+        g.DrawLine(outline, ox + 14 * sx, oy + 14 * sy, ox + 17 * sx, oy + 14 * sy);
+        FillRoundedRectangle(g, trim, Box(10, 3, 12, 2), sx);
+        using var badge = new SolidBrush(Color.FromArgb(247, 204, 85));
+        g.FillEllipse(badge, Box(20, 23, 3, 3));
+        g.SmoothingMode = oldMode;
+    }
+
+    private static GraphicsPath RoundedPath(RectangleF rect, float radius)
+    {
+        float d = Math.Max(1, Math.Min(radius * 2, Math.Min(rect.Width, rect.Height)));
+        var path = new GraphicsPath();
+        path.AddArc(rect.Left, rect.Top, d, d, 180, 90);
+        path.AddArc(rect.Right - d, rect.Top, d, d, 270, 90);
+        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
+        path.AddArc(rect.Left, rect.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    private static void FillRoundedRectangle(Graphics g, Brush brush, RectangleF rect, float radius)
+    {
+        using var path = RoundedPath(rect, radius);
+        g.FillPath(brush, path);
+    }
+
+    private static void DrawRoundedRectangle(Graphics g, Pen pen, RectangleF rect, float radius)
+    {
+        using var path = RoundedPath(rect, radius);
+        g.DrawPath(pen, path);
     }
     private static void DrawEnemy(Graphics g, Rectangle r, bool boss)
     {
