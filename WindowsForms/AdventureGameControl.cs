@@ -53,6 +53,8 @@ internal sealed class AdventureGameControl : UserControl
         public DateTime Updated { get; set; } = DateTime.Now;
     }
 
+    internal sealed record SaveSummary(string Name, string Explorer, int World, int Level, int Hp, int MaxHp, int Coins, string Weapon, string Armor, DateTime Updated);
+
     private sealed class EnemyData
     {
         public string Name { get; init; }
@@ -106,7 +108,7 @@ internal sealed class AdventureGameControl : UserControl
         var header = new Panel { Dock = DockStyle.Top, Height = 54, BackColor = Color.FromArgb(10, 16, 32) };
         header.Controls.Add(new Label { Text = "N E X U S   //   MULTIVERSO", Dock = DockStyle.Left, Width = 330, ForeColor = Cyan, Font = new Font("Segoe UI", 15, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(14, 0, 0, 0) });
         header.Controls.Add(new Label { Text = "EXPLORADOR: " + data.Explorer.ToUpperInvariant(), Dock = DockStyle.Fill, ForeColor = Color.FromArgb(195, 210, 235), TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 18, 0) });
-        AddTool("Guardar", SaveCurrent); AddTool("Inventario [I]", ShowInventory); AddTool("Equipo", ShowEquipment); AddTool("Misiones [M]", ShowMissions); AddTool("Mapa", ShowMapInfo); AddTool("Pausa [Esc]", ShowPause); AddTool("Menú principal", () => ConfirmReturn());
+        AddTool("Guardar", () => SaveCurrent()); AddTool("Inventario [I]", ShowInventory); AddTool("Equipo", ShowEquipment); AddTool("Misiones [M]", ShowMissions); AddTool("Mapa", ShowMapInfo); AddTool("Pausa [Esc]", ShowPause); AddTool("Menú principal", () => ConfirmReturn());
         Controls.Add(canvas); Controls.Add(status); Controls.Add(hud); Controls.Add(toolbar); Controls.Add(header);
         UpdateHud(); status.Text = notice;
         ShownFocus();
@@ -119,10 +121,18 @@ internal sealed class AdventureGameControl : UserControl
         b.FlatAppearance.BorderColor = Color.FromArgb(75, 135, 170); b.Click += (_, _) => action(); toolbar.Controls.Add(b);
     }
 
-    internal static List<(string Name, string Explorer, DateTime Updated)> ListSaves()
+    internal static List<SaveSummary> ListSaves()
     {
         Directory.CreateDirectory(SaveFolder);
-        return Directory.GetFiles(SaveFolder, "*.json").Select(path => { try { var s = JsonSerializer.Deserialize<SaveData>(File.ReadAllText(path)); return s == null ? (null, null, DateTime.MinValue) : (s.Name, s.Explorer, s.Updated); } catch { return (null, null, DateTime.MinValue); } }).Where(x => x.Item1 != null).OrderByDescending(x => x.Item3).ToList();
+        return Directory.GetFiles(SaveFolder, "*.json").Select(path =>
+        {
+            try
+            {
+                var s = JsonSerializer.Deserialize<SaveData>(File.ReadAllText(path));
+                return s == null ? null : new SaveSummary(s.Name, s.Explorer, Math.Clamp(s.World, 1, 4), Math.Max(1, s.Level), Math.Max(0, s.Hp), Math.Max(1, s.MaxHp), Math.Max(0, s.Coins), s.Weapon ?? "Sin arma", s.Armor ?? "Sin protección", s.Updated);
+            }
+            catch { return null; }
+        }).Where(x => x != null).OrderByDescending(x => x.Updated).ToList();
     }
     internal static SaveData LoadSave(string name)
     {
@@ -135,20 +145,27 @@ internal sealed class AdventureGameControl : UserControl
         foreach (var path in Directory.GetFiles(SaveFolder, "*.json")) { try { var s = JsonSerializer.Deserialize<SaveData>(File.ReadAllText(path)); if (s?.Name == name) File.Delete(path); } catch { } }
     }
 
-    private void SaveCurrent()
+    private bool SaveCurrent()
     {
-        using var dialog = new Form { Text = "Guardar expedición", StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, ClientSize = new Size(400, 155), BackColor = PanelColor, ForeColor = Color.White, MaximizeBox = false, MinimizeBox = false };
-        var label = new Label { Text = "Nombre para la partida", Left = 16, Top = 14, Width = 360 };
-        var input = new TextBox { Text = data.Name, Left = 16, Top = 42, Width = 360, BackColor = Color.FromArgb(29, 43, 67), ForeColor = Color.White };
-        var save = MakeButton("GUARDAR", 120, 36); save.Left = 256; save.Top = 95; save.DialogResult = DialogResult.OK;
-        dialog.Controls.AddRange([label, input, save]); dialog.AcceptButton = save;
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+        using var dialog = new Form { Text = "Guardar expedición", StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, ClientSize = new Size(460, 235), BackColor = PanelColor, ForeColor = Color.White, MaximizeBox = false, MinimizeBox = false };
+        var label = new Label { Text = "Nombre de la partida", Left = 18, Top = 16, Width = 420, ForeColor = Cyan, Font = new Font("Segoe UI", 11, FontStyle.Bold) };
+        var input = new TextBox { Text = data.Name, Left = 18, Top = 46, Width = 420, BackColor = Color.FromArgb(29, 43, 67), ForeColor = Color.White };
+        var details = new Label { Text = $"{WorldNames[data.World - 1]}   ·   NIVEL {data.Level}\r\nSalud {data.Hp}/{data.MaxHp}   ·   Créditos {data.Coins}\r\nArma: {data.Weapon}   ·   Protección: {data.Armor}", Left = 18, Top = 82, Width = 420, Height = 76, ForeColor = Color.FromArgb(205, 219, 239), Font = new Font("Segoe UI", 9) };
+        var cancel = MakeButton("CANCELAR", 115, 36); cancel.Left = 177; cancel.Top = 176; cancel.DialogResult = DialogResult.Cancel;
+        var save = MakeButton("GUARDAR", 125, 36); save.Left = 313; save.Top = 176; save.DialogResult = DialogResult.OK;
+        dialog.Controls.AddRange([label, input, details, cancel, save]); dialog.AcceptButton = save; dialog.CancelButton = cancel;
+        if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return false;
         string name = input.Text.Trim();
-        if (name.Length is < 1 or > 60) { MessageBox.Show("Usa un nombre de 1 a 60 caracteres.", "NEXUS"); return; }
+        if (name.Length is < 1 or > 60) { MessageBox.Show("Usa un nombre de 1 a 60 caracteres.", "NEXUS"); return false; }
         data.Name = name; data.Updated = DateTime.Now; Directory.CreateDirectory(SaveFolder);
         string safe = string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
-        File.WriteAllText(Path.Combine(SaveFolder, safe + ".json"), JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
-        SetNotice("Partida guardada en este equipo."); canvas.Focus();
+        string savePath = Path.Combine(SaveFolder, safe + ".json");
+        if (File.Exists(savePath) && MessageBox.Show($"Ya existe una partida llamada '{name}'. ¿Quieres reemplazarla?", "NEXUS · confirmar reemplazo", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return false;
+        File.WriteAllText(savePath, JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
+        SetNotice($"Partida '{data.Name}' guardada · {WorldNames[data.World - 1]} · nivel {data.Level}.");
+        MessageBox.Show($"Partida guardada correctamente.\r\n\r\n{data.Name}\r\n{WorldNames[data.World - 1]} · Nivel {data.Level}\r\nSalud {data.Hp}/{data.MaxHp} · {data.Coins} créditos", "NEXUS · guardado", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        canvas.Focus();
+        return true;
     }
 
     private void ShowInventory()
@@ -185,9 +202,12 @@ internal sealed class AdventureGameControl : UserControl
         for (int w = 1; w <= 4; w++)
         {
             string key = "main-" + w;
-            list.Items.Add((data.CompletedMissions.Contains(key) ? "✓ " : "○ ") + $"Principal · {WorldNames[w - 1]}: derrota al jefe de la mazmorra");
-            string side = "side-" + w;
-            list.Items.Add((data.CompletedMissions.Contains(side) ? "✓ " : "○ ") + $"Secundaria · {new[] { "Recupera suministros", "Limpia el sector infectado", "Activa las balizas", "Recupera los datos NEXUS" }[w - 1]}");
+            bool mainComplete = data.CompletedMissions.Contains(key) || data.DefeatedBosses.Contains("boss-" + w);
+            list.Items.Add((mainComplete ? "✓" : "○") + $" PRINCIPAL · {WorldNames[w - 1]} · {(mainComplete ? "Jefe derrotado, portal abierto" : "Derrota al jefe de la mazmorra")}");
+            string objective = w switch { 1 => "Abre un cofre de suministros", 2 => "Derrota 3 robots de esta zona", 3 => "Recupera el cofre de la mazmorra", _ => "Derrota al Titán NEXUS" };
+            bool sideComplete = data.CompletedMissions.Contains("side-" + w);
+            list.Items.Add((sideComplete ? "✓" : "○") + $" SECUNDARIA · {objective} · {SecondaryProgress(w)}");
+            list.Items.Add($"   Premio: {SecondaryReward(w)} + 30 créditos + 40 XP");
         }
         list.Items.Add("Progreso de campaña: " + data.DefeatedBosses.Count + "/4 jefes · " + data.EnemiesDefeated + " enemigos derrotados · " + data.OpenedChests.Count + " cofres abiertos");
         panel.Controls.Add(list);
@@ -202,7 +222,7 @@ internal sealed class AdventureGameControl : UserControl
 
     private void ShowPause() => ShowOverlay("JUEGO EN PAUSA", "Tu expedición queda en su estado actual.", panel =>
     {
-        panel.Controls.Add(MakeAction("GUARDAR PARTIDA", SaveCurrent));
+        panel.Controls.Add(MakeAction("GUARDAR PARTIDA", () => SaveCurrent()));
         panel.Controls.Add(MakeAction("CONTINUAR", CloseOverlay));
         panel.Controls.Add(MakeAction("VOLVER AL MENÚ", ConfirmReturn));
     });
@@ -229,7 +249,7 @@ internal sealed class AdventureGameControl : UserControl
     {
         var result = MessageBox.Show("¿Guardar la expedición antes de volver al menú principal?", "NEXUS", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
         if (result == DialogResult.Cancel) return;
-        if (result == DialogResult.Yes) SaveCurrent();
+        if (result == DialogResult.Yes && !SaveCurrent()) return;
         CloseOverlay(); returnToMenu();
     }
 
@@ -302,10 +322,13 @@ internal sealed class AdventureGameControl : UserControl
         string key = "side-" + data.World;
         if (data.CompletedMissions.Contains(key)) { SetNotice("La misión secundaria de esta realidad ya está completa."); return; }
         if (data.World == 1 && !data.OpenedChests.Any(x => x.StartsWith("field-1-"))) { SetNotice("Misión secundaria: encuentra y abre un cofre de suministros."); return; }
-        if (data.World == 2 && data.EnemiesDefeated < 3) { SetNotice("Misión secundaria: derrota 3 robots infectados. Progreso: " + data.EnemiesDefeated + "/3."); return; }
+        int worldTwoDefeats = data.ClearedEnemies.Count(x => x.StartsWith("field-2-"));
+        if (data.World == 2 && worldTwoDefeats < 3) { SetNotice("Misión secundaria: derrota 3 robots infectados. Progreso: " + worldTwoDefeats + "/3."); return; }
         if (data.World == 3 && !data.OpenedChests.Contains("dungeon-3")) { SetNotice("Misión secundaria: recupera los datos del cofre de la mazmorra."); return; }
         if (data.World == 4 && !data.DefeatedBosses.Contains("boss-4")) { SetNotice("Misión secundaria: derrota al Titán NEXUS."); return; }
-        data.CompletedMissions.Add(key); data.Coins += 30; GainExperience(40); SetNotice("Misión secundaria completada: +30 créditos y 40 XP.");
+        string reward = SecondaryReward(data.World);
+        data.CompletedMissions.Add(key); data.Coins += 30; GainExperience(40); data.Inventory.Add(reward);
+        SetNotice($"Misión secundaria completada: +30 créditos, 40 XP y {reward}. Revisa el inventario para equiparlo.");
     }
 
     private void AdvanceWorld()
@@ -326,6 +349,26 @@ internal sealed class AdventureGameControl : UserControl
         data.Inventory.Add(reward); data.Inventory.Add("Poción médica");
         if (key.StartsWith("dungeon-")) data.CompletedMissions.Add("cache-" + data.World);
         SetNotice($"Cofre abierto: {reward}, una poción y {20 + data.World * 5} créditos."); UpdateHud(); canvas.Invalidate();
+    }
+
+    private static string SecondaryReward(int world) => world switch
+    {
+        1 => "Botiquín de campo",
+        2 => "Blindaje reforzado",
+        3 => "Rifle de precisión",
+        _ => "Armadura de fase"
+    };
+
+    private string SecondaryProgress(int world)
+    {
+        if (data.CompletedMissions.Contains("side-" + world)) return "COMPLETADA";
+        return world switch
+        {
+            1 => data.OpenedChests.Any(x => x.StartsWith("field-1-")) ? "1/1 cofre" : "0/1 cofres",
+            2 => $"{Math.Min(3, data.ClearedEnemies.Count(x => x.StartsWith("field-2-")))}/3 robots",
+            3 => data.OpenedChests.Contains("dungeon-3") ? "datos recuperados" : "cofre de mazmorra pendiente",
+            _ => data.DefeatedBosses.Contains("boss-4") ? "Titán derrotado" : "Titán pendiente"
+        };
     }
 
     private void StartBattle(bool boss, string key)
@@ -675,4 +718,3 @@ internal sealed class AdventureGameControl : UserControl
 
     protected override void Dispose(bool disposing) { if (disposing) heroPortrait?.Dispose(); base.Dispose(disposing); }
 }
-
