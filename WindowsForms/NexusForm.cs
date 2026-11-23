@@ -34,6 +34,9 @@ internal sealed class NexusForm : Form
     private System.Windows.Forms.Timer loadingTimer;
     private NexusProgressBar loadingBar;
     private Label loadingLabel;
+    private System.Windows.Forms.Timer jarvisTimer;
+    private bool jarvisEnabled;
+    private Dictionary<string, int> jarvisInventoryState = new(StringComparer.OrdinalIgnoreCase);
 
     public NexusForm()
     {
@@ -44,7 +47,7 @@ internal sealed class NexusForm : Form
         BackColor = Ink;
         ForeColor = Color.White;
         ShowSplash();
-        FormClosing += (_, _) => { closing = true; inputReady.Set(); };
+        FormClosing += (_, _) => { closing = true; jarvisTimer?.Stop(); inputReady.Set(); };
     }
 
     private void ShowSplash()
@@ -354,16 +357,25 @@ internal sealed class NexusForm : Form
         var send = StyledButton("Enviar", Purple, Color.White, 105, 36); send.Dock = DockStyle.Right; send.Click += (_, _) => SubmitInput();
         var inputRow = new Panel { Dock = DockStyle.Top, Height = 42, Padding = new Padding(0, 4, 0, 0) }; inputRow.Controls.Add(input); inputRow.Controls.Add(send);
         var entry = new Panel { Dock = DockStyle.Bottom, Height = 78, Padding = new Padding(16, 5, 16, 12), BackColor = Color.FromArgb(12, 10, 31) }; entry.Controls.Add(inputRow); entry.Controls.Add(prompt);
-        var quick = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 48, Padding = new Padding(12, 5, 12, 5), BackColor = Color.FromArgb(12, 10, 31), WrapContents = false };
-        AddQuickButton(quick, "↑ W", "w"); AddQuickButton(quick, "← A", "a"); AddQuickButton(quick, "↓ S", "s"); AddQuickButton(quick, "→ D", "d"); AddQuickButton(quick, "Inventario (I)", "i"); AddQuickButton(quick, "Misión (M)", "m"); AddQuickButton(quick, "Menú (Q)", "q");
-        var saveButton = StyledButton("Guardar partida", Color.FromArgb(41, 22, 83), Color.White, 150, 32);
+        var quick = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 86, Padding = new Padding(12, 5, 12, 5), BackColor = Color.FromArgb(12, 10, 31), WrapContents = true, AutoScroll = true };
+        AddQuickButton(quick, "EXPLORAR · 1", "1");
+        AddQuickButton(quick, "ANALIZAR IRIS · 2", "2");
+        AddQuickButton(quick, "ESTADO · 3", "3");
+        AddQuickButton(quick, "ENERGÍA · 4", "4");
+        AddQuickButton(quick, "ESCANEAR · 5", "5");
+        AddQuickButton(quick, "MAPA · 6", "6");
+        AddQuickButton(quick, "COMUNICAR · 7", "7");
+        AddQuickButton(quick, "NARRATIVA · 8", "8");
+        AddQuickButton(quick, "ASISTENTE · 0", "0");
+        AddQuickButton(quick, "SALIR · 9", "9");
+        var saveButton = StyledButton("GUARDAR PARTIDA", Color.FromArgb(41, 22, 83), Color.White, 150, 32);
         saveButton.AutoSize = true; saveButton.Margin = new Padding(4, 2, 4, 2);
         saveButton.Click += async (_, _) => await SaveCurrentGameAsync();
         quick.Controls.Add(saveButton);
-        var voiceButton = StyledButton(IrisSpeechService.Enabled ? "Voz IRIS: ON" : "Voz IRIS: OFF", Color.FromArgb(31, 21, 62), Color.FromArgb(221, 208, 255), 115, 32);
-        voiceButton.AutoSize = true; voiceButton.Margin = new Padding(4, 2, 4, 2);
-        voiceButton.Click += (_, _) => voiceButton.Text = IrisSpeechService.Toggle() ? "Voz IRIS: ON" : "Voz IRIS: OFF";
-        quick.Controls.Add(voiceButton);
+        var jarvisButton = StyledButton("JARVIS: DESACTIVADO", Color.FromArgb(31, 21, 62), Color.FromArgb(221, 208, 255), 180, 32);
+        jarvisButton.AutoSize = true; jarvisButton.Margin = new Padding(4, 2, 4, 2);
+        jarvisButton.Click += (_, _) => ToggleJarvis(jarvisButton);
+        quick.Controls.Add(jarvisButton);
         page.Controls.Add(body); page.Controls.Add(entry); page.Controls.Add(quick); page.Controls.Add(title);
         ReplacePage(page);
 
@@ -381,6 +393,92 @@ internal sealed class NexusForm : Form
         }
         var gameThread = new Thread(() => { try { global::Program.Main(); } catch (Exception ex) { UiConsole.WriteLine("\r\n[ERROR] " + ex.Message); } }) { IsBackground = true, Name = "NEXUS game" };
         gameThread.Start();
+    }
+
+    private void ToggleJarvis(Button button)
+    {
+        if (!jarvisEnabled)
+        {
+            if (!IrisSpeechService.Enabled) IrisSpeechService.Toggle();
+            jarvisEnabled = true;
+            button.Text = "JARVIS: ACTIVADO";
+            button.BackColor = Color.FromArgb(17, 105, 91);
+            try
+            {
+                var snapshot = global::Program.CapturarPartida();
+                jarvisInventoryState = BuildInventoryState(snapshot);
+                IrisSpeechService.Speak(BuildJarvisReport(snapshot));
+            }
+            catch (Exception ex)
+            {
+                IrisSpeechService.Speak("JARVIS está activo, pero todavía no puedo leer el estado de la expedición.");
+                Append("\r\n[JARVIS] No se pudo leer el inventario: " + ex.Message + "\r\n");
+            }
+
+            jarvisTimer ??= new System.Windows.Forms.Timer { Interval = 1800 };
+            jarvisTimer.Tick -= JarvisTimerTick;
+            jarvisTimer.Tick += JarvisTimerTick;
+            jarvisTimer.Start();
+            Append("\r\n[JARVIS] Asistente activado. Supervisando inventario.\r\n");
+        }
+        else
+        {
+            jarvisTimer?.Stop();
+            IrisSpeechService.Speak("JARVIS desactivado. Dejaré de supervisar tu inventario.");
+            if (IrisSpeechService.Enabled) IrisSpeechService.Toggle();
+            jarvisEnabled = false;
+            button.Text = "JARVIS: DESACTIVADO";
+            button.BackColor = Color.FromArgb(31, 21, 62);
+            Append("\r\n[JARVIS] Asistente desactivado.\r\n");
+        }
+    }
+
+    private void JarvisTimerTick(object sender, EventArgs e)
+    {
+        if (!jarvisEnabled) return;
+        try
+        {
+            var snapshot = global::Program.CapturarPartida();
+            var current = BuildInventoryState(snapshot);
+            var changes = new List<string>();
+            foreach (string itemName in jarvisInventoryState.Keys.Union(current.Keys, StringComparer.OrdinalIgnoreCase))
+            {
+                jarvisInventoryState.TryGetValue(itemName, out int previous);
+                current.TryGetValue(itemName, out int now);
+                if (now > previous) changes.Add($"Has obtenido {itemName}: ahora tienes {now}.");
+                else if (now < previous) changes.Add($"Has usado o perdido {itemName}: ahora tienes {now}.");
+            }
+
+            if (changes.Count > 0)
+            {
+                jarvisInventoryState = current;
+                string message = "Actualización del inventario. " + string.Join(" ", changes);
+                Append("\r\n[JARVIS] " + message + "\r\n");
+                IrisSpeechService.Speak(message);
+            }
+        }
+        catch
+        {
+            // El juego puede estar actualizando una lista al mismo tiempo; se reintenta en el siguiente ciclo.
+        }
+    }
+
+    private static Dictionary<string, int> BuildInventoryState(GameSnapshot snapshot)
+    {
+        return (snapshot.Inventory ?? new List<SavedInventoryItem>())
+            .Where(item => item.Quantity > 0)
+            .GroupBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Sum(item => item.Quantity), StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string BuildJarvisReport(GameSnapshot snapshot)
+    {
+        var inventory = BuildInventoryState(snapshot);
+        string inventoryText = inventory.Count == 0
+            ? "Tu inventario está vacío."
+            : "En tu inventario tienes " + string.Join(", ", inventory.Select(item => $"{item.Value} {item.Key}")) + ".";
+        string character = snapshot.CharacterId == 2 || snapshot.CharacterId == 4 ? "unidad robótica" : "explorador humano";
+        return $"JARVIS en línea. Hola {snapshot.ExplorerName}. Estás en {snapshot.Reality}, tu energía es {snapshot.Energy} y tu vida es {snapshot.CharacterHealth}. Eres una {character}. {inventoryText} Misión actual: {snapshot.MissionName}.";
     }
 
     private static Image LoadArtwork(string imagePath)
