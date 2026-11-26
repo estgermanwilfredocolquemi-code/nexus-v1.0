@@ -79,6 +79,7 @@ internal sealed class AdventureGameControl : UserControl
     private string notice = "Explora con WASD o flechas · E interactuar · I inventario · M misiones · Esc pausa";
     private EnemyData enemy;
     private Panel overlay;
+    private DateTime battleImpactUntil = DateTime.MinValue;
 
     private static readonly string[] Dungeon = [
         "##############", "#....#.......#", "#....#..##...#", "#.......##...#", "###.#........#", "#...#..###...#", "#......#.....#", "#..##........#", "#............#", "##############"];
@@ -86,14 +87,18 @@ internal sealed class AdventureGameControl : UserControl
     private sealed class GameCanvas : Control
     {
         private readonly AdventureGameControl owner;
+        private readonly System.Windows.Forms.Timer battleAnimation = new() { Interval = 55 };
         internal GameCanvas(AdventureGameControl owner)
         {
             this.owner = owner; Dock = DockStyle.Fill; TabStop = true;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            MouseDown += (_, _) => Focus();
+            MouseDown += (_, e) => { owner.HandleCanvasClick(e.Location, ClientRectangle); Focus(); };
+            battleAnimation.Tick += (_, _) => { if (owner.mode == "battle") Invalidate(); };
+            battleAnimation.Start();
         }
         protected override void OnPaint(PaintEventArgs e) => owner.DrawWorld(e.Graphics, ClientRectangle);
         protected override void OnKeyDown(KeyEventArgs e) { owner.HandleKey(e); base.OnKeyDown(e); }
+        protected override void Dispose(bool disposing) { if (disposing) battleAnimation.Dispose(); base.Dispose(disposing); }
     }
 
     internal AdventureGameControl(string explorer, bool female, int character, Action returnToMenu, SaveData loaded = null, int startingWorld = 1)
@@ -409,6 +414,7 @@ internal sealed class AdventureGameControl : UserControl
     private void BattleAction(int action)
     {
         if (enemy == null) return;
+        battleImpactUntil = DateTime.UtcNow.AddMilliseconds(450);
         if (action == 3) { if (enemy.Boss) SetNotice("No puedes abandonar un combate contra un jefe."); else { enemy = null; mode = "map"; SetNotice("Te retiraste del combate."); } canvas.Invalidate(); return; }
         if (action == 1)
         {
@@ -736,14 +742,126 @@ internal sealed class AdventureGameControl : UserControl
     }
     private void DrawBattle(Graphics g, Rectangle b)
     {
-        using var veil = new SolidBrush(Color.FromArgb(218, 5, 10, 24)); g.FillRectangle(veil, b);
-        using var ground = new LinearGradientBrush(new Rectangle(0, b.Height * 2 / 3, b.Width, b.Height / 3), Color.FromArgb(61, 83, 96), Color.FromArgb(20, 28, 44), LinearGradientMode.Vertical); g.FillRectangle(ground, 0, b.Height * 2 / 3, b.Width, b.Height / 3);
-        DrawHero(g, new Rectangle(b.Width / 4 - 48, b.Height / 2, 96, 124)); DrawEnemy(g, new Rectangle(b.Width * 3 / 4 - 62, b.Height / 2, 124, 124), enemy.Boss);
-        using var title = new Font("Segoe UI", 24, FontStyle.Bold); using var small = new Font("Segoe UI", 13); using var white = new SolidBrush(Color.White); using var cyan = new SolidBrush(Cyan);
-        g.DrawString(enemy.Boss ? "JEFE DE MAZMORRA" : "ENCUENTRO HOSTIL", title, cyan, 32, 26);
-        g.DrawString(data.Explorer + $" · {data.Hp}/{data.MaxHp} HP", small, white, b.Width / 4 - 90, b.Height * 2 / 3 + 10);
-        g.DrawString(enemy.Name + $" · {enemy.Hp}/{enemy.MaxHp} HP", small, white, b.Width * 3 / 4 - 120, b.Height * 2 / 3 + 10);
-        g.DrawString("1  ATACAR       2  USAR OBJETO       3  RETIRARSE", small, cyan, b.Width / 2 - 210, b.Height - 45);
+        int floorY = b.Height * 2 / 3;
+        using (var sky = new LinearGradientBrush(b, Color.FromArgb(11, 25, 57), Color.FromArgb(41, 23, 69), LinearGradientMode.Vertical)) g.FillRectangle(sky, b);
+        using (var skylineGlow = new SolidBrush(Color.FromArgb(45, 36, 186, 226))) g.FillEllipse(skylineGlow, b.Width / 2 - b.Width / 3, floorY - b.Height / 2, b.Width * 2 / 3, b.Height / 2);
+
+        // Night city arena with lit windows and a glowing horizon, inspired by the reference clip.
+        var skyline = new[] { (0.02f, .37f, .13f), (.17f, .30f, .11f), (.31f, .40f, .10f), (.43f, .24f, .12f), (.58f, .34f, .10f), (.72f, .28f, .12f), (.87f, .38f, .13f) };
+        foreach (var building in skyline)
+        {
+            int x = (int)(b.Width * building.Item1), w = (int)(b.Width * building.Item3), h = (int)(b.Height * building.Item2);
+            var tower = new Rectangle(x, floorY - h, w, h);
+            using var facade = new LinearGradientBrush(tower, Color.FromArgb(56, 89, 143), Color.FromArgb(12, 25, 52), LinearGradientMode.Vertical);
+            g.FillRectangle(facade, tower);
+            using var edge = new Pen(Color.FromArgb(100, 108, 197, 232), Math.Max(1, b.Width / 900)); g.DrawLine(edge, x + 4, floorY - h, x + 4, floorY);
+            using var window = new SolidBrush(Color.FromArgb(105, 93, 201, 240));
+            for (int wy = floorY - h + 12; wy < floorY - 8; wy += Math.Max(12, b.Height / 22))
+                for (int wx = x + 12; wx < x + w - 7; wx += Math.Max(12, b.Width / 70)) g.FillRectangle(window, wx, wy, 4, 6);
+        }
+        using (var horizon = new Pen(Color.FromArgb(155, 57, 223, 244), Math.Max(2, b.Width / 500))) g.DrawLine(horizon, 0, floorY, b.Width, floorY);
+        using (var floor = new LinearGradientBrush(new Rectangle(0, floorY, b.Width, b.Height - floorY), Color.FromArgb(29, 77, 116), Color.FromArgb(7, 13, 29), LinearGradientMode.Vertical)) g.FillRectangle(floor, 0, floorY, b.Width, b.Height - floorY);
+        using (var grid = new Pen(Color.FromArgb(66, 90, 215, 245), 1))
+        {
+            for (int i = 1; i <= 7; i++) { int y = floorY + i * (b.Height - floorY) / 8; g.DrawLine(grid, 0, y, b.Width, y); }
+            for (int i = 0; i <= 12; i++) { int x = i * b.Width / 12; g.DrawLine(grid, b.Width / 2, floorY, x, b.Bottom); }
+        }
+
+        int heroX = b.Width * 29 / 100, enemyX = b.Width * 72 / 100;
+        int spriteHeight = Math.Clamp(b.Height / 4, 86, 142), spriteWidth = spriteHeight * 3 / 4;
+        int spriteY = floorY - spriteHeight + Math.Max(2, b.Height / 100);
+        using (var shadow = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
+        {
+            g.FillEllipse(shadow, heroX - spriteWidth / 2, floorY - 7, spriteWidth, 15);
+            g.FillEllipse(shadow, enemyX - spriteWidth / 2, floorY - 7, spriteWidth, 15);
+        }
+        DrawMapCharacter(g, new Rectangle(heroX - spriteWidth / 2, spriteY, spriteWidth, spriteHeight));
+        DrawBattleEnemy(g, new Rectangle(enemyX - spriteWidth / 2, spriteY, spriteWidth, spriteHeight), enemy.Boss);
+        if (data.IrisAwake) DrawIrisCompanion(g, new Rectangle(heroX + spriteWidth / 2 - 5, floorY - spriteHeight * 2 / 3, spriteWidth / 2, spriteHeight * 2 / 3));
+
+        if (DateTime.UtcNow < battleImpactUntil)
+        {
+            float phase = (Environment.TickCount % 360) / 360f;
+            int impactX = enemyX, impactY = spriteY + spriteHeight / 2;
+            using var beam = new Pen(Color.FromArgb(185, 111, 239, 255), Math.Max(4, b.Width / 180));
+            using var core = new Pen(Color.FromArgb(235, 255, 255, 224), Math.Max(2, b.Width / 360));
+            g.DrawLine(beam, heroX + spriteWidth / 3, impactY + 16, impactX - spriteWidth / 4, impactY - 8);
+            g.DrawLine(core, heroX + spriteWidth / 3, impactY + 16, impactX - spriteWidth / 4, impactY - 8);
+            using var ring = new Pen(Color.FromArgb(190, 76, 225, 255), 3);
+            int radius = (int)(18 + phase * 30); g.DrawEllipse(ring, impactX - radius, impactY - radius, radius * 2, radius * 2);
+            for (int i = 0; i < 8; i++) { double a = i * Math.PI / 4 + phase; int sx = impactX + (int)(Math.Cos(a) * (radius + 8)), sy = impactY + (int)(Math.Sin(a) * (radius + 8)); g.FillEllipse(Brushes.LightCyan, sx, sy, 4, 4); }
+        }
+
+        using var title = new Font("Segoe UI", Math.Clamp(b.Width / 58f, 16f, 26f), FontStyle.Bold);
+        using var label = new Font("Segoe UI", Math.Clamp(b.Width / 105f, 10f, 15f), FontStyle.Bold);
+        using var small = new Font("Segoe UI", Math.Clamp(b.Width / 135f, 9f, 12f));
+        using var white = new SolidBrush(Color.White); using var cyan = new SolidBrush(Color.FromArgb(133, 236, 255));
+        g.DrawString(enemy.Boss ? "DUELO DE GUARDIÁN" : "ENCUENTRO HOSTIL", title, cyan, 24, 18);
+        g.DrawString("ARENA NEXUS   //   " + WorldNames[data.World - 1], small, white, 28, 22 + title.Height);
+        DrawBattleHealth(g, 28, 96, Math.Min(b.Width / 3, 330), data.Hp, data.MaxHp, data.Explorer, Color.FromArgb(66, 224, 173), label, small);
+        DrawBattleHealth(g, b.Width - Math.Min(b.Width / 3, 330) - 28, 96, Math.Min(b.Width / 3, 330), enemy.Hp, enemy.MaxHp, enemy.Name, Color.FromArgb(255, 91, 117), label, small);
+        if (data.IrisAwake) g.DrawString("IRIS · APOYO ACTIVO  +8 DAÑO", small, cyan, 28, 136);
+        DrawBattleActionButtons(g, b, label, small);
+    }
+
+    private void HandleCanvasClick(Point point, Rectangle bounds)
+    {
+        if (mode != "battle") return;
+        int buttonWidth = Math.Min(190, (bounds.Width - 48) / 3), gap = 10, total = buttonWidth * 3 + gap * 2;
+        int left = (bounds.Width - total) / 2, top = bounds.Height - 76;
+        for (int i = 0; i < 3; i++)
+            if (new Rectangle(left + i * (buttonWidth + gap), top, buttonWidth, 58).Contains(point)) { BattleAction(i + 1); return; }
+    }
+
+    private void DrawBattleActionButtons(Graphics g, Rectangle bounds, Font label, Font small)
+    {
+        int buttonWidth = Math.Min(190, (bounds.Width - 48) / 3), gap = 10, total = buttonWidth * 3 + gap * 2;
+        int left = (bounds.Width - total) / 2, top = bounds.Height - 76;
+        string[] titles = ["1  GOLPE", "2  RECUPERAR", "3  RETIRARSE"];
+        string[] subtitles = [data.IrisAwake ? "Combo con IRIS" : data.Weapon, "Usar botiquín", enemy.Boss ? "Jefe bloquea la salida" : "Abandonar duelo"];
+        for (int i = 0; i < 3; i++)
+        {
+            var rect = new Rectangle(left + i * (buttonWidth + gap), top, buttonWidth, 58);
+            using var fill = new LinearGradientBrush(rect, i == 0 ? Color.FromArgb(83, 41, 168) : Color.FromArgb(24, 45, 78), i == 0 ? Color.FromArgb(28, 111, 174) : Color.FromArgb(13, 25, 48), LinearGradientMode.Vertical);
+            using var border = new Pen(i == 0 ? Color.FromArgb(140, 122, 229, 255) : Color.FromArgb(95, 102, 160, 205), 1.3f);
+            FillRoundedRectangle(g, fill, rect, 9); DrawRoundedRectangle(g, border, rect, 9);
+            using var white = new SolidBrush(Color.White); using var muted = new SolidBrush(Color.FromArgb(177, 205, 225));
+            g.DrawString(titles[i], label, white, rect.Left + 12, rect.Top + 7);
+            g.DrawString(subtitles[i], small, muted, rect.Left + 12, rect.Top + 31);
+        }
+    }
+
+    private static void DrawBattleHealth(Graphics g, int x, int y, int width, int hp, int maxHp, string name, Color fill, Font label, Font small)
+    {
+        using var text = new SolidBrush(Color.White); using var muted = new SolidBrush(Color.FromArgb(183, 208, 226));
+        g.DrawString(name.ToUpperInvariant(), label, text, x, y - label.Height - 4);
+        var bar = new Rectangle(x, y, width, 15);
+        using var back = new SolidBrush(Color.FromArgb(188, 12, 18, 35)); g.FillRectangle(back, bar);
+        int fillWidth = (int)((bar.Width - 2) * Math.Clamp(hp / (float)Math.Max(1, maxHp), 0, 1));
+        if (fillWidth > 0) { using var brush = new LinearGradientBrush(new Rectangle(bar.Left + 1, bar.Top + 1, Math.Max(1, fillWidth), bar.Height - 2), fill, Color.FromArgb(230, fill), LinearGradientMode.Horizontal); g.FillRectangle(brush, bar.Left + 1, bar.Top + 1, fillWidth, bar.Height - 2); }
+        using var border = new Pen(Color.FromArgb(155, 140, 215, 245)); g.DrawRectangle(border, bar);
+        g.DrawString($"{hp} / {maxHp} HP", small, muted, x, y + 17);
+    }
+
+    private static void DrawBattleEnemy(Graphics g, Rectangle r, bool boss)
+    {
+        var old = g.SmoothingMode; g.SmoothingMode = SmoothingMode.None;
+        using var metal = new SolidBrush(boss ? Color.FromArgb(154, 49, 86) : Color.FromArgb(81, 142, 151));
+        using var shade = new SolidBrush(boss ? Color.FromArgb(70, 26, 56) : Color.FromArgb(35, 63, 83));
+        using var light = new SolidBrush(boss ? Color.FromArgb(255, 111, 112) : Color.FromArgb(139, 215, 220));
+        using var eye = new SolidBrush(Color.FromArgb(255, 239, 123));
+        int s = Math.Max(4, r.Width / 11), cx = r.Left + r.Width / 2;
+        g.FillRectangle(shade, cx - 3 * s, r.Top + 5 * s, 6 * s, 9 * s);
+        g.FillRectangle(metal, cx - 2 * s, r.Top + 3 * s, 4 * s, 8 * s);
+        g.FillRectangle(shade, cx - 3 * s, r.Top + s, 6 * s, 5 * s);
+        g.FillRectangle(light, cx - 2 * s, r.Top + 2 * s, 4 * s, 2 * s);
+        g.FillRectangle(eye, cx - s, r.Top + 3 * s, 2 * s, Math.Max(2, s / 2));
+        g.FillRectangle(metal, cx - 4 * s, r.Top + 6 * s, s, 6 * s);
+        g.FillRectangle(metal, cx + 3 * s, r.Top + 6 * s, s, 6 * s);
+        g.FillRectangle(shade, cx - 2 * s, r.Top + 13 * s, 2 * s, 4 * s);
+        g.FillRectangle(shade, cx + s, r.Top + 13 * s, 2 * s, 4 * s);
+        if (boss) { g.FillRectangle(light, cx - 4 * s, r.Top, 2 * s, 3 * s); g.FillRectangle(light, cx + 2 * s, r.Top, 2 * s, 3 * s); }
+        g.SmoothingMode = old;
     }
 
     private static string[][] BuildMaps()
