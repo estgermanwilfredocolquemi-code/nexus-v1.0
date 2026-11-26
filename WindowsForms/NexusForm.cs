@@ -483,6 +483,7 @@ internal sealed class NexusForm : Form
         var saves = AdventureGameControl.ListSaves();
         if (saves.Count == 0)
         {
+<<<<<<< HEAD
             MessageBox.Show("Todavía no hay partidas de aventura guardadas. Pulsa JUGAR para comenzar y usa Guardar dentro del juego.", "NEXUS · partidas");
             return;
         }
@@ -499,6 +500,51 @@ internal sealed class NexusForm : Form
         var delete = StyledButton("ELIMINAR", Color.FromArgb(104, 27, 61), Color.White, 120, 36); delete.Left = 405; delete.Top = 330;
         var cancel = StyledButton("CERRAR", Color.FromArgb(30, 22, 58), Color.White, 120, 36); cancel.Left = 536; cancel.Top = 330; cancel.DialogResult = DialogResult.Cancel;
         load.Click += (_, _) => { if (list.SelectedIndex < 0 || list.SelectedIndex >= saves.Count) return; dialog.Tag = saves[list.SelectedIndex].Name; dialog.DialogResult = DialogResult.OK; dialog.Close(); };
+=======
+            if (MessageBox.Show("Todavía no hay partidas guardadas. ¿Quieres comenzar una expedición nueva?", "NEXUS · partidas", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                StartAdventure(null, selectedWorld);
+            return;
+        }
+        using var dialog = new Form { Text = "PARTIDAS DE AVENTURA", StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, ClientSize = new Size(760, 490), BackColor = Panel, ForeColor = Color.White, MaximizeBox = false, MinimizeBox = false };
+        var heading = new Label { Text = "ELIGE UNA EXPEDICIÓN", Left = 18, Top = 14, Width = 700, Height = 32, ForeColor = Cyan, Font = new Font("Segoe UI", 15, FontStyle.Bold) };
+        var subheading = new Label { Text = "Revisa el mundo, nivel, salud y equipo guardados antes de continuar.", Left = 18, Top = 45, Width = 700, Height = 25, ForeColor = Color.FromArgb(201, 212, 235), Font = new Font("Segoe UI", 9) };
+        var list = new ListBox { Left = 18, Top = 76, Width = 724, Height = 320, BackColor = Color.FromArgb(10, 9, 29), ForeColor = Color.White, Font = new Font("Segoe UI", 10), DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 62, IntegralHeight = false };
+        string[] worlds = ["TIERRA-01 · BOSQUE VIVO", "TIERRA-02 · ZONA ZOMBI", "TIERRA-07 · FRONTERA CRIOGÉNICA", "NEXUS-09 · CIUDAD DIGITAL"];
+        list.DrawItem += (_, e) =>
+        {
+            if (e.Index < 0 || e.Index >= list.Items.Count) return;
+            var save = (AdventureGameControl.SaveSummary)list.Items[e.Index];
+            bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            using var background = new SolidBrush(selected ? Color.FromArgb(51, 44, 91) : Color.FromArgb(10, 9, 29));
+            using var titleBrush = new SolidBrush(selected ? Color.White : Color.FromArgb(221, 231, 246));
+            using var detailBrush = new SolidBrush(selected ? Cyan : Color.FromArgb(165, 186, 211));
+            using var titleFont = new Font("Segoe UI", 10, FontStyle.Bold);
+            using var detailFont = new Font("Segoe UI", 8.5f);
+            e.Graphics.FillRectangle(background, e.Bounds);
+            e.Graphics.DrawString($"{save.Name}  ·  {save.Explorer}", titleFont, titleBrush, e.Bounds.Left + 12, e.Bounds.Top + 8);
+            e.Graphics.DrawString($"{worlds[Math.Clamp(save.World, 1, 4) - 1]}  ·  NIVEL {save.Level}  ·  ♥ {save.Hp}/{save.MaxHp}  ·  ◈ {save.Coins} créditos", detailFont, detailBrush, e.Bounds.Left + 12, e.Bounds.Top + 31);
+            e.Graphics.DrawString($"Arma: {save.Weapon}  ·  Equipo: {save.Armor}  ·  Guardada: {save.Updated:g}", detailFont, detailBrush, e.Bounds.Left + 12, e.Bounds.Top + 46);
+            e.DrawFocusRectangle();
+        };
+        void RefreshList()
+        {
+            list.Items.Clear();
+            foreach (var save in saves) list.Items.Add(save);
+            if (list.Items.Count > 0) list.SelectedIndex = 0;
+        }
+        RefreshList();
+        var load = StyledButton("CONTINUAR PARTIDA", Purple, Color.White, 175, 38); load.Left = 18; load.Top = 426;
+        var delete = StyledButton("ELIMINAR", Color.FromArgb(104, 27, 61), Color.White, 125, 38); delete.Left = 438; delete.Top = 426;
+        var cancel = StyledButton("CERRAR", Color.FromArgb(30, 22, 58), Color.White, 125, 38); cancel.Left = 617; cancel.Top = 426; cancel.DialogResult = DialogResult.Cancel;
+        load.Click += (_, _) =>
+        {
+            if (list.SelectedIndex < 0 || list.SelectedIndex >= saves.Count) return;
+            var selectedSave = saves[list.SelectedIndex];
+            string summary = $"{selectedSave.Name}\r\n{worlds[Math.Clamp(selectedSave.World, 1, 4)]} · Nivel {selectedSave.Level}\r\nSalud {selectedSave.Hp}/{selectedSave.MaxHp} · {selectedSave.Coins} créditos\r\nArma: {selectedSave.Weapon} · Protección: {selectedSave.Armor}";
+            if (MessageBox.Show("¿Continuar con esta partida?\r\n\r\n" + summary, "NEXUS · confirmar carga", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            dialog.Tag = selectedSave.Name; dialog.DialogResult = DialogResult.OK; dialog.Close();
+        };
+>>>>>>> a92c8774b8e317281b29c03b3bb90af0d8e400cc
         delete.Click += (_, _) =>
         {
             if (list.SelectedIndex < 0 || list.SelectedIndex >= saves.Count) return;
@@ -506,7 +552,11 @@ internal sealed class NexusForm : Form
             if (MessageBox.Show($"¿Eliminar la partida '{saveName}'?", "NEXUS", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
             AdventureGameControl.DeleteSave(saveName); saves.RemoveAt(list.SelectedIndex); RefreshList(); if (saves.Count == 0) dialog.Close();
         };
+<<<<<<< HEAD
         dialog.Controls.AddRange([list, load, delete, cancel]); dialog.CancelButton = cancel;
+=======
+        dialog.Controls.AddRange([heading, subheading, list, load, delete, cancel]); dialog.CancelButton = cancel;
+>>>>>>> a92c8774b8e317281b29c03b3bb90af0d8e400cc
         if (dialog.ShowDialog(this) == DialogResult.OK && dialog.Tag is string saveName)
         {
             var saved = AdventureGameControl.LoadSave(saveName);

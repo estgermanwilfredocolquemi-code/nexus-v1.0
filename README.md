@@ -33,3 +33,7 @@ Por defecto, el juego clásico usa `Server=localhost\\SQLEXPRESS;Database=NEXUS;
 ## Pendiente para una etapa posterior
 
 Música y efectos de sonido originales, y habilidades especiales de combate.
+<<<<<<< HEAD
+=======
+
+>>>>>>> a92c8774b8e317281b29c03b3bb90af0d8e400cc
