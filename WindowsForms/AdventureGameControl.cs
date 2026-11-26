@@ -21,8 +21,10 @@ internal sealed class AdventureGameControl : UserControl
         "Una ciudad evacuada quedó cubierta por la infección. Los robots de contención ya no distinguen aliados.",
         "La nieve oculta las ruinas de una estación científica. Sus guardianes protegen el núcleo de salto.",
         "La ciudad central de NEXUS está en manos de una inteligencia hostil. Derrota al Titán para cerrar la anomalía."];
-    private const int MapWidth = 32;
-    private const int MapHeight = 20;
+    // Each reality is a large, scrolling region. The camera only shows a portion
+    // at once, and undiscovered terrain remains hidden until the explorer travels.
+    private const int MapWidth = 64;
+    private const int MapHeight = 40;
     private static readonly string[][] Maps = BuildMaps();
 
     internal sealed class SaveData
@@ -47,6 +49,8 @@ internal sealed class AdventureGameControl : UserControl
         public List<string> OpenedChests { get; set; } = [];
         public List<string> DefeatedBosses { get; set; } = [];
         public List<string> ClearedEnemies { get; set; } = [];
+        public List<string> DiscoveredTiles { get; set; } = [];
+        public bool IrisAwake { get; set; }
         public bool InDungeon { get; set; }
         public int DungeonX { get; set; } = 1;
         public int DungeonY { get; set; } = 6;
@@ -100,7 +104,9 @@ internal sealed class AdventureGameControl : UserControl
         data.Explorer = string.IsNullOrWhiteSpace(data.Explorer) ? explorer : data.Explorer;
         data.World = Math.Clamp(data.World, 1, 4); data.X = Math.Clamp(data.X, 1, MapWidth - 2); data.Y = Math.Clamp(data.Y, 1, MapHeight - 2);
         data.Level = Math.Max(1, data.Level); data.MaxHp = Math.Max(100, data.MaxHp); data.Hp = Math.Clamp(data.Hp, 1, data.MaxHp);
-        data.Inventory ??= []; data.CompletedMissions ??= []; data.OpenedChests ??= []; data.DefeatedBosses ??= []; data.ClearedEnemies ??= [];
+        data.Inventory ??= []; data.CompletedMissions ??= []; data.OpenedChests ??= []; data.DefeatedBosses ??= []; data.ClearedEnemies ??= []; data.DiscoveredTiles ??= [];
+        data.IrisAwake |= data.Level >= 2;
+        DiscoverAroundPlayer();
         string portrait = data.CharacterId switch { 2 => "portrait-robot-aliado.png", 3 => "portrait-humano-enemigo.png", 4 => "portrait-robot-enemigo.png", _ => data.Female ? "portrait-humana-mujer.png" : "portrait-humano-hombre.png" };
         string portraitPath = Path.Combine(AppContext.BaseDirectory, portrait);
         if (File.Exists(portraitPath)) { using var image = Image.FromFile(portraitPath); heroPortrait = new Bitmap(image); }
@@ -203,7 +209,8 @@ internal sealed class AdventureGameControl : UserControl
         {
             string key = "main-" + w;
             bool mainComplete = data.CompletedMissions.Contains(key) || data.DefeatedBosses.Contains("boss-" + w);
-            list.Items.Add((mainComplete ? "✓" : "○") + $" PRINCIPAL · {WorldNames[w - 1]} · {(mainComplete ? "Jefe derrotado, portal abierto" : "Derrota al jefe de la mazmorra")}");
+            string bossObjective = w == 4 && !data.IrisAwake ? "Nivel 2 requerido · despierta a IRIS" : "Derrota al jefe de la mazmorra";
+            list.Items.Add((mainComplete ? "✓" : "○") + $" PRINCIPAL · {WorldNames[w - 1]} · {(mainComplete ? "Jefe derrotado, portal abierto" : bossObjective)}");
             string objective = w switch { 1 => "Abre un cofre de suministros", 2 => "Derrota 3 robots de esta zona", 3 => "Recupera el cofre de la mazmorra", _ => "Derrota al Titán NEXUS" };
             bool sideComplete = data.CompletedMissions.Contains("side-" + w);
             list.Items.Add((sideComplete ? "✓" : "○") + $" SECUNDARIA · {objective} · {SecondaryProgress(w)}");
@@ -216,7 +223,16 @@ internal sealed class AdventureGameControl : UserControl
     private void ShowMapInfo() => ShowOverlay("MAPA DE REALIDADES", "Cuatro mundos conectados. Los portales se activan al derrotar al guardián de cada mazmorra.", panel =>
     {
         var list = MakeList();
-        for (int i = 0; i < 4; i++) list.Items.Add($"MUNDO {i + 1} · {WorldNames[i]}\r\n{WorldLore[i]}");
+        int revealed = data.DiscoveredTiles.Count(k => k.StartsWith(data.World + ":"));
+        list.Items.Add($"SECTOR ACTUAL · X {data.X} / Y {data.Y} · {revealed} de {MapWidth * MapHeight} casillas descubiertas");
+        list.Items.Add("Explora con WASD o flechas: el mapa se revela a tu alrededor.");
+        list.Items.Add("MARCADORES: Q encargo · C suministro · D mazmorra · P portal · B guardián");
+        list.Items.Add("SEÑALES LEJANAS: suministro al este (35,20) · enlace de misión al sureste (49,31) · alijo al noreste (51,6)");
+        for (int i = 0; i < 4; i++)
+        {
+            string requirement = i == 3 ? " · Titán: nivel 2 + IRIS" : " · Derrota al guardián para abrir el portal";
+            list.Items.Add($"MUNDO {i + 1} · {WorldNames[i]}{requirement}\r\n{WorldLore[i]}");
+        }
         panel.Controls.Add(list);
     });
 
@@ -287,6 +303,7 @@ internal sealed class AdventureGameControl : UserControl
         if (ny < 0 || nx < 0 || ny >= map.Length || nx >= map[ny].Length || map[ny][nx] is '#' or 'T' or '~' or 'H') return;
         if (data.InDungeon) { data.DungeonX = nx; data.DungeonY = ny; }
         else { data.X = nx; data.Y = ny; }
+        if (!data.InDungeon) DiscoverAroundPlayer();
         char tile = map[ny][nx];
         if (tile == 'E' && !data.InDungeon) StartBattle(false, "field-" + data.World + "-" + nx + "-" + ny);
         else if (tile == 'B' && !data.InDungeon) StartBattle(true, "guardian-" + data.World);
@@ -337,7 +354,7 @@ internal sealed class AdventureGameControl : UserControl
         if (!data.DefeatedBosses.Contains(boss)) { SetNotice("El portal está sellado. Primero derrota al jefe dentro de la mazmorra."); return; }
         if (data.World == 4) { data.CompletedMissions.Add("campaign-complete"); SetNotice("¡Campaña completada! La anomalía dimensional quedó contenida."); return; }
         data.CompletedMissions.Add("main-" + data.World);
-        data.World++; data.X = 2; data.Y = 10; data.InDungeon = false; data.Hp = Math.Min(data.MaxHp, data.Hp + 25);
+        data.World++; data.X = 2; data.Y = 10; data.InDungeon = false; data.Hp = Math.Min(data.MaxHp, data.Hp + 25); DiscoverAroundPlayer();
         SetNotice("Portal activado: " + WorldNames[data.World - 1] + ". Recuperaste salud al cruzar.");
     }
 
@@ -374,6 +391,16 @@ internal sealed class AdventureGameControl : UserControl
     private void StartBattle(bool boss, string key)
     {
         if (data.ClearedEnemies.Contains(key) || data.DefeatedBosses.Contains(key)) return;
+        if (boss && data.World == 4 && data.Level < 2)
+        {
+            SetNotice("El Titán NEXUS recomienda nivel 2. Explora, completa encargos y vuelve cuando Iris despierte.");
+            canvas.Invalidate(); return;
+        }
+        if (boss && data.World == 4 && !data.IrisAwake)
+        {
+            SetNotice("IRIS: Necesito que alcances el nivel 2 para sincronizarme contigo.");
+            canvas.Invalidate(); return;
+        }
         int hp = (boss ? 85 : 34) + data.World * (boss ? 25 : 12);
         enemy = new EnemyData { Name = boss ? new[] { "", "Coloso de raíces", "Némesis infectada", "Guardián criogénico", "Titán NEXUS" }[data.World] : new[] { "", "Autómata de vigilancia", "Robot infectado", "Centinela de hielo", "Dron de la brecha" }[data.World], Hp = hp, MaxHp = hp, Boss = boss, Key = key };
         mode = "battle"; SetNotice("¡Encuentro! Pulsa 1 para atacar · 2 para usar objeto · 3 para retirarte."); canvas.Invalidate();
@@ -383,7 +410,13 @@ internal sealed class AdventureGameControl : UserControl
     {
         if (enemy == null) return;
         if (action == 3) { if (enemy.Boss) SetNotice("No puedes abandonar un combate contra un jefe."); else { enemy = null; mode = "map"; SetNotice("Te retiraste del combate."); } canvas.Invalidate(); return; }
-        if (action == 1) { int damage = AttackPower(); enemy.Hp -= damage; SetNotice($"Golpeaste con {data.Weapon}: {damage} de daño."); }
+        if (action == 1)
+        {
+            int damage = AttackPower();
+            if (data.IrisAwake) damage += 8;
+            enemy.Hp -= damage;
+            SetNotice(data.IrisAwake ? $"Iris sincroniza tu ataque: {damage} de daño combinado." : $"Golpeaste con {data.Weapon}: {damage} de daño.");
+        }
         else
         {
             int idx = data.Inventory.FindIndex(x => x.Contains("Poción") || x.Contains("Batería") || x.Contains("Botiquín"));
@@ -412,10 +445,31 @@ internal sealed class AdventureGameControl : UserControl
     private void GainExperience(int amount)
     {
         data.Experience += amount;
-        while (data.Experience >= ExperienceToNext()) { data.Experience -= ExperienceToNext(); data.Level++; data.MaxHp += 15; data.Hp = data.MaxHp; SetNotice("¡Subiste al nivel " + data.Level + "! Salud y ataque aumentados."); }
+        while (data.Experience >= ExperienceToNext())
+        {
+            data.Experience -= ExperienceToNext(); data.Level++; data.MaxHp += 15; data.Hp = data.MaxHp;
+            if (data.Level >= 2 && !data.IrisAwake)
+            {
+                data.IrisAwake = true;
+                data.Inventory.Add("Módulo de sincronía IRIS");
+                SetNotice("¡Nivel 2! IRIS despierta y se une a la expedición. Sus pulsos refuerzan tus ataques.");
+            }
+            else SetNotice("¡Subiste al nivel " + data.Level + "! Salud y ataque aumentados.");
+        }
     }
-    private void UpdateHud() => hud.Text = $"  {data.Explorer}   ◆ {WorldNames[data.World - 1]}   ♥ {data.Hp}/{data.MaxHp}   LV {data.Level} · {data.Experience}/{ExperienceToNext()} XP   ◈ {data.Coins}   ⚔ {data.Weapon}";
+    private void UpdateHud() => hud.Text = $"  {data.Explorer}   ◆ {WorldNames[data.World - 1]}   ♥ {data.Hp}/{data.MaxHp}   LV {data.Level} · {data.Experience}/{ExperienceToNext()} XP   ◈ {data.Coins}   ⚔ {data.Weapon}   {(data.IrisAwake ? "◆ IRIS EN LÍNEA" : "IRIS · BLOQUEADA HASTA NIVEL 2")}";
     private void SetNotice(string text) { notice = text; status.Text = "  " + text; }
+
+    private string DiscoveryKey(int x, int y) => $"{data.World}:{x}:{y}";
+    private bool IsDiscovered(int x, int y) => data.DiscoveredTiles.Contains(DiscoveryKey(x, y));
+    private void DiscoverAroundPlayer()
+    {
+        const int radius = 5;
+        for (int y = Math.Max(0, data.Y - radius); y <= Math.Min(MapHeight - 1, data.Y + radius); y++)
+            for (int x = Math.Max(0, data.X - radius); x <= Math.Min(MapWidth - 1, data.X + radius); x++)
+                if (Math.Abs(x - data.X) + Math.Abs(y - data.Y) <= radius && !IsDiscovered(x, y))
+                    data.DiscoveredTiles.Add(DiscoveryKey(x, y));
+    }
 
     private void DrawWorld(Graphics g, Rectangle bounds)
     {
@@ -423,11 +477,21 @@ internal sealed class AdventureGameControl : UserControl
         if (bounds.Width < 20 || bounds.Height < 20) return;
         string[] map = data.InDungeon ? Dungeon : Maps[data.World - 1];
         int cols = map[0].Length, rows = map.Length;
-        int tile = Math.Max(14, Math.Min(bounds.Width / cols, bounds.Height / rows));
-        int ox = (bounds.Width - cols * tile) / 2, oy = (bounds.Height - rows * tile) / 2;
-        for (int y = 0; y < rows; y++) for (int x = 0; x < cols; x++)
+        int tile = Math.Max(20, Math.Min(bounds.Width / 26, bounds.Height / 17));
+        int visibleCols = Math.Min(cols, bounds.Width / tile + 2), visibleRows = Math.Min(rows, bounds.Height / tile + 2);
+        int px = data.InDungeon ? data.DungeonX : data.X, py = data.InDungeon ? data.DungeonY : data.Y;
+        int startX = Math.Clamp(px - visibleCols / 2, 0, Math.Max(0, cols - visibleCols));
+        int startY = Math.Clamp(py - visibleRows / 2, 0, Math.Max(0, rows - visibleRows));
+        int ox = (bounds.Width - visibleCols * tile) / 2, oy = (bounds.Height - visibleRows * tile) / 2;
+        for (int y = startY; y < startY + visibleRows; y++) for (int x = startX; x < startX + visibleCols; x++)
         {
-            char ch = map[y][x]; var rect = new Rectangle(ox + x * tile, oy + y * tile, tile, tile);
+            char ch = map[y][x]; var rect = new Rectangle(ox + (x - startX) * tile, oy + (y - startY) * tile, tile, tile);
+            if (!data.InDungeon && !IsDiscovered(x, y))
+            {
+                using var fog = new SolidBrush(Color.FromArgb(252, 5, 10, 22));
+                g.FillRectangle(fog, rect); using var edge = new Pen(Color.FromArgb(90, 29, 42, 62)); g.DrawRectangle(edge, rect);
+                continue;
+            }
             DrawTile(g, rect, ch, x, y);
             if (!data.InDungeon && ch == 'C' && data.OpenedChests.Contains($"field-{data.World}-{x}-{y}")) DrawGround(g, rect, data.World, x, y);
             if (!data.InDungeon && ch == 'E' && data.ClearedEnemies.Contains($"field-{data.World}-{x}-{y}")) DrawGround(g, rect, data.World, x, y);
@@ -440,11 +504,12 @@ internal sealed class AdventureGameControl : UserControl
             if (!data.InDungeon && ch == 'P') DrawPortal(g, rect);
             if (data.InDungeon && x == 1 && y == 7) DrawDoor(g, rect);
         }
-        int px = data.InDungeon ? data.DungeonX : data.X, py = data.InDungeon ? data.DungeonY : data.Y;
         int heroWidth = Math.Max(22, tile * 11 / 10), heroHeight = Math.Max(32, tile * 3 / 2);
-        DrawHero(g, new Rectangle(ox + px * tile + (tile - heroWidth) / 2, oy + (py + 1) * tile - heroHeight, heroWidth, heroHeight));
+        DrawHero(g, new Rectangle(ox + (px - startX) * tile + (tile - heroWidth) / 2, oy + (py - startY + 1) * tile - heroHeight, heroWidth, heroHeight));
+        if (!data.InDungeon && data.IrisAwake)
+            DrawIrisCompanion(g, new Rectangle(ox + (px - startX) * tile + tile / 2, oy + (py - startY) * tile + tile / 3, Math.Max(18, tile / 2), Math.Max(24, tile * 2 / 3)));
         using var titleFont = new Font("Segoe UI", 10, FontStyle.Bold);
-        string title = data.InDungeon ? $"MAZMORRA · {WorldNames[data.World - 1]}" : WorldNames[data.World - 1];
+        string title = data.InDungeon ? $"MAZMORRA · {WorldNames[data.World - 1]}" : $"{WorldNames[data.World - 1]} · SECTOR {px / 8 + 1}-{py / 8 + 1} · {data.DiscoveredTiles.Count(k => k.StartsWith(data.World + ":"))} ZONAS REVELADAS";
         using var titleBrush = new SolidBrush(Color.FromArgb(230, 231, 244, 255));
         g.DrawString(title, titleFont, titleBrush, 14, 12);
         if (mode == "battle") DrawBattle(g, bounds);
@@ -544,6 +609,23 @@ internal sealed class AdventureGameControl : UserControl
         using var body = new SolidBrush(data.CharacterId == 2 ? Color.FromArgb(78, 185, 205) : Color.FromArgb(220, 231, 239)); g.FillEllipse(body, r.Left + r.Width / 5, r.Top + r.Height / 4, r.Width * 3 / 5, r.Height * 3 / 4);
         using var head = new SolidBrush(Color.FromArgb(227, 197, 168)); g.FillEllipse(head, r.Left + r.Width / 4, r.Top, r.Width / 2, r.Height / 3);
         using var visor = new SolidBrush(Color.FromArgb(46, 199, 242)); g.FillRectangle(visor, r.Left + r.Width / 3, r.Top + r.Height / 8, r.Width / 3, r.Height / 10);
+    }
+
+    private static void DrawIrisCompanion(Graphics g, Rectangle r)
+    {
+        using var glow = new SolidBrush(Color.FromArgb(45, 66, 223, 255));
+        using var metal = new SolidBrush(Color.FromArgb(210, 138, 182, 206));
+        using var dark = new SolidBrush(Color.FromArgb(210, 35, 69, 96));
+        using var visor = new SolidBrush(Color.FromArgb(235, 67, 232, 255));
+        using var labelFont = new Font("Segoe UI", Math.Max(7, r.Width / 4), FontStyle.Bold);
+        using var labelBrush = new SolidBrush(Color.FromArgb(225, 170, 246, 255));
+        g.FillEllipse(glow, Rectangle.Inflate(r, 3, 3));
+        g.FillEllipse(metal, r.Left + r.Width / 5, r.Top, r.Width * 3 / 5, r.Height / 3);
+        g.FillRectangle(visor, r.Left + r.Width / 3, r.Top + r.Height / 7, r.Width / 3, Math.Max(2, r.Height / 12));
+        g.FillRectangle(dark, r.Left + r.Width / 6, r.Top + r.Height / 3, r.Width * 2 / 3, r.Height / 2);
+        g.FillRectangle(metal, r.Left + r.Width / 4, r.Top + r.Height / 3, r.Width / 2, r.Height / 2);
+        g.FillEllipse(visor, r.Left + r.Width / 2 - 2, r.Top + r.Height / 2, 4, 4);
+        g.DrawString("IRIS", labelFont, labelBrush, r.Left - r.Width / 5, r.Top - labelFont.Height);
     }
 
     private void DrawMapCharacter(Graphics g, Rectangle r)
@@ -673,13 +755,14 @@ internal sealed class AdventureGameControl : UserControl
             // Give each reality a distinct silhouette before carving its walkable streets.
             for (int y = 1; y < MapHeight - 1; y++) for (int x = 1; x < MapWidth - 1; x++)
             {
-                if (world == 1 && ((x * 13 + y * 7 + 11) % 8 < 4) && (x < 8 || x > 23 || y < 4 || y > 15)) map[y][x] = 'T';
-                if (world == 1 && x >= 13 && x <= 15 && y >= 2 && y <= 7) map[y][x] = '~';
+                int region = (x / 16 + y / 10 + world) % 4;
+                if (world == 1 && region is 0 or 1 && ((x * 13 + y * 7 + 11) % 5 < 2)) map[y][x] = 'T';
+                if (world == 1 && ((x >= 13 && x <= 15 && y >= 2 && y <= 7) || (x >= 45 && x <= 48 && y >= 26 && y <= 31))) map[y][x] = '~';
                 if (world == 2 && ((x >= 3 && x <= 8 && y >= 3 && y <= 5) || (x >= 12 && x <= 16 && y >= 3 && y <= 5) || (x >= 24 && x <= 29 && y >= 3 && y <= 5))) map[y][x] = 'H';
-                if (world == 2 && ((x * 5 + y * 3) % 11 == 0)) map[y][x] = '#';
-                if (world == 3 && ((x >= 11 && x <= 13 && y >= 2 && y <= 8) || (x >= 16 && x <= 18 && y >= 12 && y <= 18))) map[y][x] = '~';
-                if (world == 3 && ((x + y * 2) % 13 == 0)) map[y][x] = '#';
-                if (world == 4 && ((x * 3 + y * 5) % 17 == 0)) map[y][x] = '#';
+                if (world == 2 && region is 1 or 3 && ((x * 5 + y * 3) % 11 == 0)) map[y][x] = '#';
+                if (world == 3 && ((x >= 11 && x <= 13 && y >= 2 && y <= 8) || (x >= 16 && x <= 18 && y >= 12 && y <= 18) || (x >= 42 && x <= 45 && y >= 23 && y <= 29))) map[y][x] = '~';
+                if (world == 3 && region is 0 or 2 && ((x + y * 2) % 13 == 0)) map[y][x] = '#';
+                if (world == 4 && region is 1 or 2 && ((x * 3 + y * 5) % 17 == 0)) map[y][x] = '#';
             }
             if (world == 1)
                 foreach (var p in new[] { (3, 6), (5, 6), (3, 8), (25, 6), (27, 6), (25, 8) }) PlaceBuilding(map, p.Item1, p.Item2);
@@ -703,6 +786,8 @@ internal sealed class AdventureGameControl : UserControl
             for (int y = 10; y <= 15; y++) map[y][21] = '.';
             for (int x = 21; x <= 28; x++) map[10][x] = '.';
             map[9][6] = 'Q'; map[10][8] = 'D'; map[5][12] = 'C'; map[5][18] = 'E'; map[14][12] = 'E'; map[10][28] = 'P'; map[15][22] = 'B';
+            // Three optional landmarks reward exploration beyond the starting valley.
+            map[20][35] = 'C'; map[31][49] = 'Q'; map[6][51] = 'C';
             // Mazmorra approach is kept clear; the actual interior is its own navigable tile map.
             result[world - 1] = map.Select(row => new string(row)).ToArray();
         }
@@ -718,3 +803,4 @@ internal sealed class AdventureGameControl : UserControl
 
     protected override void Dispose(bool disposing) { if (disposing) heroPortrait?.Dispose(); base.Dispose(disposing); }
 }
+
