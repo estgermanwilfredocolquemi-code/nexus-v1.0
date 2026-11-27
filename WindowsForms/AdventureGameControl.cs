@@ -17,15 +17,16 @@ internal sealed class AdventureGameControl : UserControl
     private static readonly string[] Realities = ["TIERRA-01", "TIERRA-02", "TIERRA-07", "NEXUS-09"];
     private static readonly string[] WorldNames = ["TIERRA-01 · BOSQUE VIVO", "TIERRA-02 · ZONA ZOMBI", "TIERRA-07 · FRONTERA CRIOGÉNICA", "NEXUS-09 · CIUDAD DIGITAL"];
     private static readonly string[] WorldLore = [
-        "Bosques antiguos, caminos de piedra y un puesto de exploración. Encuentra la primera llave dimensional.",
-        "Una ciudad evacuada quedó cubierta por la infección. Los robots de contención ya no distinguen aliados.",
-        "La nieve oculta las ruinas de una estación científica. Sus guardianes protegen el núcleo de salto.",
-        "La ciudad central de NEXUS está en manos de una inteligencia hostil. Derrota al Titán para cerrar la anomalía."];
+        "La primera fractura partió el cielo sobre el Bosque Vivo. Mara Veld mantiene encendido el Refugio Raíz mientras busca a la cartógrafa que oyó por primera vez la voz de IRIS.",
+        "La Zona Cero cayó cuando Némesis reescribió las órdenes de evacuación. Vexa conoce cada calle, pero aún busca a su hermano entre las máquinas infectadas.",
+        "La científica Niva Orun sigue transmitiendo desde una estación bajo el hielo. Sus datos podrían demostrar quién abrió realmente los portales.",
+        "En NEXUS-09, el Titán protege el núcleo de la anomalía. Kael-7 y los desertores saben que el robot no nació hostil: alguien le borró sus recuerdos."];
     // Each reality is a large, scrolling region. The camera only shows a portion
     // at once, and undiscovered terrain remains hidden until the explorer travels.
-    private const int MapWidth = 64;
-    private const int MapHeight = 40;
-    private static readonly string[][] Maps = BuildMaps();
+    // Each reality is a large, procedurally textured region with plenty of room
+    // between the story route and optional exploration sites.
+    private const int DungeonWidth = 14;
+    private const int DungeonHeight = 10;
 
     internal sealed class SaveData
     {
@@ -46,6 +47,7 @@ internal sealed class AdventureGameControl : UserControl
         public string Weapon { get; set; } = "Hoja de supervivencia";
         public string Armor { get; set; } = "Uniforme NEXUS";
         public List<string> CompletedMissions { get; set; } = [];
+        public List<string> AcceptedMissions { get; set; } = [];
         public List<string> OpenedChests { get; set; } = [];
         public List<string> DefeatedBosses { get; set; } = [];
         public List<string> ClearedEnemies { get; set; } = [];
@@ -54,6 +56,7 @@ internal sealed class AdventureGameControl : UserControl
         public bool InDungeon { get; set; }
         public int DungeonX { get; set; } = 1;
         public int DungeonY { get; set; } = 6;
+        public int Energy { get; set; } = 50;
         public DateTime Updated { get; set; } = DateTime.Now;
     }
 
@@ -66,6 +69,7 @@ internal sealed class AdventureGameControl : UserControl
         public int MaxHp { get; init; }
         public bool Boss { get; init; }
         public string Key { get; init; }
+        public bool Charging { get; set; }
     }
 
     private readonly Label status = new() { Dock = DockStyle.Bottom, Height = 34, ForeColor = Cyan, BackColor = Color.FromArgb(12, 19, 35), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(14, 0, 0, 0) };
@@ -80,6 +84,8 @@ internal sealed class AdventureGameControl : UserControl
     private EnemyData enemy;
     private Panel overlay;
     private DateTime battleImpactUntil = DateTime.MinValue;
+    private readonly Random combatRng = new();
+    private bool guarding;
 
     private static readonly string[] Dungeon = [
         "##############", "#....#.......#", "#....#..##...#", "#.......##...#", "###.#........#", "#...#..###...#", "#......#.....#", "#..##........#", "#............#", "##############"];
@@ -107,9 +113,10 @@ internal sealed class AdventureGameControl : UserControl
         Dock = DockStyle.Fill;
         data = loaded ?? new SaveData { Explorer = explorer, Female = female, CharacterId = character, World = Math.Clamp(startingWorld, 1, 4) };
         data.Explorer = string.IsNullOrWhiteSpace(data.Explorer) ? explorer : data.Explorer;
-        data.World = Math.Clamp(data.World, 1, 4); data.X = Math.Clamp(data.X, 1, MapWidth - 2); data.Y = Math.Clamp(data.Y, 1, MapHeight - 2);
+        data.World = Math.Clamp(data.World, 1, 4); data.X = Math.Clamp(data.X, -1_000_000, 1_000_000); data.Y = Math.Clamp(data.Y, -1_000_000, 1_000_000);
         data.Level = Math.Max(1, data.Level); data.MaxHp = Math.Max(100, data.MaxHp); data.Hp = Math.Clamp(data.Hp, 1, data.MaxHp);
-        data.Inventory ??= []; data.CompletedMissions ??= []; data.OpenedChests ??= []; data.DefeatedBosses ??= []; data.ClearedEnemies ??= []; data.DiscoveredTiles ??= [];
+        data.Inventory ??= []; data.CompletedMissions ??= []; data.AcceptedMissions ??= []; data.OpenedChests ??= []; data.DefeatedBosses ??= []; data.ClearedEnemies ??= []; data.DiscoveredTiles ??= [];
+        data.Energy = Math.Clamp(data.Energy, 0, 100);
         data.IrisAwake |= data.Level >= 2;
         DiscoverAroundPlayer();
         string portrait = data.CharacterId switch { 2 => "portrait-robot-aliado.png", 3 => "portrait-humano-enemigo.png", 4 => "portrait-robot-enemigo.png", _ => data.Female ? "portrait-humana-mujer.png" : "portrait-humano-hombre.png" };
@@ -218,7 +225,8 @@ internal sealed class AdventureGameControl : UserControl
             list.Items.Add((mainComplete ? "✓" : "○") + $" PRINCIPAL · {WorldNames[w - 1]} · {(mainComplete ? "Jefe derrotado, portal abierto" : bossObjective)}");
             string objective = w switch { 1 => "Abre un cofre de suministros", 2 => "Derrota 3 robots de esta zona", 3 => "Recupera el cofre de la mazmorra", _ => "Derrota al Titán NEXUS" };
             bool sideComplete = data.CompletedMissions.Contains("side-" + w);
-            list.Items.Add((sideComplete ? "✓" : "○") + $" SECUNDARIA · {objective} · {SecondaryProgress(w)}");
+            string questState = sideComplete ? "COMPLETADA" : data.AcceptedMissions.Contains("side-" + w) ? "ACEPTADA" : "HABLA CON " + QuestNpcName(w).ToUpperInvariant();
+            list.Items.Add((sideComplete ? "✓" : "○") + $" SECUNDARIA · {objective} · {questState} · {SecondaryProgress(w)}");
             list.Items.Add($"   Premio: {SecondaryReward(w)} + 30 créditos + 40 XP");
         }
         list.Items.Add("Progreso de campaña: " + data.DefeatedBosses.Count + "/4 jefes · " + data.EnemiesDefeated + " enemigos derrotados · " + data.OpenedChests.Count + " cofres abiertos");
@@ -229,9 +237,9 @@ internal sealed class AdventureGameControl : UserControl
     {
         var list = MakeList();
         int revealed = data.DiscoveredTiles.Count(k => k.StartsWith(data.World + ":"));
-        list.Items.Add($"SECTOR ACTUAL · X {data.X} / Y {data.Y} · {revealed} de {MapWidth * MapHeight} casillas descubiertas");
-        list.Items.Add("Explora con WASD o flechas: el mapa se revela a tu alrededor.");
-        list.Items.Add("MARCADORES: Q encargo · C suministro · D mazmorra · P portal · B guardián");
+        list.Items.Add($"COORDENADAS · X {data.X} / Y {data.Y} · {revealed} casillas descubiertas en esta realidad");
+        list.Items.Add("Mundo generado por regiones sin borde: explora en cualquier dirección; cada zona nueva se crea al llegar.");
+        list.Items.Add("MARCADORES: Q encargo · C suministro · E enemigo · D mazmorra · P portal · B guardián");
         list.Items.Add("SEÑALES LEJANAS: suministro al este (35,20) · enlace de misión al sureste (49,31) · alijo al noreste (51,6)");
         for (int i = 0; i < 4; i++)
         {
@@ -285,6 +293,8 @@ internal sealed class AdventureGameControl : UserControl
             if (e.KeyCode is Keys.D1 or Keys.NumPad1) BattleAction(1);
             else if (e.KeyCode is Keys.D2 or Keys.NumPad2) BattleAction(2);
             else if (e.KeyCode is Keys.D3 or Keys.NumPad3) BattleAction(3);
+            else if (e.KeyCode is Keys.D4 or Keys.NumPad4) BattleAction(4);
+            else if (e.KeyCode is Keys.D5 or Keys.NumPad5) BattleAction(5);
             e.SuppressKeyPress = true; return;
         }
         int dx = 0, dy = 0;
@@ -304,12 +314,13 @@ internal sealed class AdventureGameControl : UserControl
     {
         int x = data.InDungeon ? data.DungeonX : data.X, y = data.InDungeon ? data.DungeonY : data.Y;
         int nx = x + dx, ny = y + dy;
-        string[] map = data.InDungeon ? Dungeon : Maps[data.World - 1];
-        if (ny < 0 || nx < 0 || ny >= map.Length || nx >= map[ny].Length || map[ny][nx] is '#' or 'T' or '~' or 'H') return;
+        if (data.InDungeon && (ny < 0 || nx < 0 || ny >= Dungeon.Length || nx >= Dungeon[ny].Length)) return;
+        if (!data.InDungeon && (nx is < -1_000_000 or > 1_000_000 || ny is < -1_000_000 or > 1_000_000)) return;
+        char tile = data.InDungeon ? Dungeon[ny][nx] : GetWorldTile(data.World, nx, ny);
+        if (tile is '#' or 'T' or '~' or 'H') return;
         if (data.InDungeon) { data.DungeonX = nx; data.DungeonY = ny; }
         else { data.X = nx; data.Y = ny; }
         if (!data.InDungeon) DiscoverAroundPlayer();
-        char tile = map[ny][nx];
         if (tile == 'E' && !data.InDungeon) StartBattle(false, "field-" + data.World + "-" + nx + "-" + ny);
         else if (tile == 'B' && !data.InDungeon) StartBattle(true, "guardian-" + data.World);
         else if (tile == 'C' && !data.InDungeon) OpenChest("field-" + data.World + "-" + nx + "-" + ny);
@@ -328,7 +339,7 @@ internal sealed class AdventureGameControl : UserControl
         }
         else
         {
-            char here = Maps[data.World - 1][data.Y][data.X];
+            char here = GetWorldTile(data.World, data.X, data.Y);
             if (here == 'D') { data.InDungeon = true; data.DungeonX = 1; data.DungeonY = 6; SetNotice("Entraste a la mazmorra. Explora, abre el cofre y derrota al jefe."); }
             else if (here == 'Q') GiveQuest();
             else if (here == 'P') AdvanceWorld();
@@ -343,15 +354,53 @@ internal sealed class AdventureGameControl : UserControl
     {
         string key = "side-" + data.World;
         if (data.CompletedMissions.Contains(key)) { SetNotice("La misión secundaria de esta realidad ya está completa."); return; }
-        if (data.World == 1 && !data.OpenedChests.Any(x => x.StartsWith("field-1-"))) { SetNotice("Misión secundaria: encuentra y abre un cofre de suministros."); return; }
+        string npc = QuestNpcName(data.World);
+        if (!data.AcceptedMissions.Contains(key))
+        {
+            string offer = data.World switch
+            {
+                1 => $"{npc}: El bosque está perdiendo su luz. Necesito que recuperes suministros de un cofre. ¿Aceptas?",
+                2 => $"{npc}: La infección tomó tres drones de patrulla. Desactívalos antes de que encuentren el refugio. ¿Aceptas?",
+                3 => $"{npc}: En la estación hay datos capaces de estabilizar el clima. Recupera el módulo de la mazmorra. ¿Aceptas?",
+                _ => $"{npc}: El Titán controla la ciudad. Necesito que lo derrotes para abrir una ruta de evacuación. ¿Aceptas?"
+            };
+            if (MessageBox.Show(offer, "ENCARGO · " + WorldNames[data.World - 1], MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            { SetNotice($"{npc}: Entiendo. Estaré aquí si cambias de idea."); return; }
+            data.AcceptedMissions.Add(key);
+            SetNotice($"{npc}: Encargo aceptado. Te espero para recibir el informe y la recompensa.");
+            UpdateHud(); canvas.Invalidate(); return;
+        }
         int worldTwoDefeats = data.ClearedEnemies.Count(x => x.StartsWith("field-2-"));
-        if (data.World == 2 && worldTwoDefeats < 3) { SetNotice("Misión secundaria: derrota 3 robots infectados. Progreso: " + worldTwoDefeats + "/3."); return; }
-        if (data.World == 3 && !data.OpenedChests.Contains("dungeon-3")) { SetNotice("Misión secundaria: recupera los datos del cofre de la mazmorra."); return; }
-        if (data.World == 4 && !data.DefeatedBosses.Contains("boss-4")) { SetNotice("Misión secundaria: derrota al Titán NEXUS."); return; }
+        bool objectiveDone = data.World switch
+        {
+            1 => data.OpenedChests.Any(x => x.StartsWith("field-1-")),
+            2 => worldTwoDefeats >= 3,
+            3 => data.OpenedChests.Contains("dungeon-3"),
+            _ => data.DefeatedBosses.Contains("boss-4")
+        };
+        if (!objectiveDone)
+        {
+            string progress = data.World switch
+            {
+                1 => "Abre un cofre de suministros.",
+                2 => $"Desactiva drones infectados: {worldTwoDefeats}/3.",
+                3 => "Recupera el módulo de datos de la mazmorra.",
+                _ => "Derrota al Titán NEXUS. Recomendado: nivel 2 con IRIS."
+            };
+            SetNotice($"{npc}: {progress} Vuelve conmigo cuando lo logres."); return;
+        }
         string reward = SecondaryReward(data.World);
         data.CompletedMissions.Add(key); data.Coins += 30; GainExperience(40); data.Inventory.Add(reward);
-        SetNotice($"Misión secundaria completada: +30 créditos, 40 XP y {reward}. Revisa el inventario para equiparlo.");
+        SetNotice($"{npc}: ¡Lo conseguiste! +30 créditos, 40 XP y {reward}. Gracias por salvar nuestra gente.");
     }
+
+    private static string QuestNpcName(int world) => world switch
+    {
+        1 => "Mara Veld, guardabosques del Refugio Raíz",
+        2 => "Tarek Sola, médico de la Zona Cero",
+        3 => "Doctora Niva Orun, última científica de la estación",
+        _ => "Kael-7, piloto de la resistencia NEXUS"
+    };
 
     private void AdvanceWorld()
     {
@@ -415,20 +464,41 @@ internal sealed class AdventureGameControl : UserControl
     {
         if (enemy == null) return;
         battleImpactUntil = DateTime.UtcNow.AddMilliseconds(450);
-        if (action == 3) { if (enemy.Boss) SetNotice("No puedes abandonar un combate contra un jefe."); else { enemy = null; mode = "map"; SetNotice("Te retiraste del combate."); } canvas.Invalidate(); return; }
-        if (action == 1)
+        guarding = false;
+        if (action == 5)
         {
-            int damage = AttackPower();
-            if (data.IrisAwake) damage += 8;
-            enemy.Hp -= damage;
-            SetNotice(data.IrisAwake ? $"Iris sincroniza tu ataque: {damage} de daño combinado." : $"Golpeaste con {data.Weapon}: {damage} de daño.");
+            if (enemy.Boss) SetNotice("El jefe bloquea la retirada. Tendrás que abrirte paso.");
+            else if (combatRng.Next(100) < 70) { enemy = null; mode = "map"; SetNotice("Te retiraste del combate. Recupera energía antes de volver."); }
+            else SetNotice("No encontraste una salida; el enemigo te corta el paso.");
+            if (enemy == null) { canvas.Invalidate(); return; }
         }
-        else
+        else if (action == 1 || action == 2)
+        {
+            bool special = action == 2;
+            if (special && data.Energy < 35) { SetNotice("Energía insuficiente. Golpea o defiéndete para recargar (35 requeridos)."); return; }
+            if (special) data.Energy -= 35;
+            int baseDamage = AttackPower() + (special ? AttackPower() * 3 / 2 : 0);
+            if (!special) data.Energy = Math.Min(100, data.Energy + 18);
+            int critChance = data.CharacterId switch { 2 => 32, 3 => 30, 4 => 18, _ => 22 };
+            bool critical = combatRng.Next(100) < critChance;
+            int damage = baseDamage + (data.IrisAwake ? 8 : 0);
+            if (critical) damage = (int)(damage * 1.75f);
+            enemy.Hp -= damage;
+            string ability = special ? data.CharacterId switch { 2 => "SOBRECARGA IÓNICA", 3 => "RUPTURA DE FASE", 4 => "CAÑÓN DE ASALTO", _ => "CORTE DIMENSIONAL" } : "ATAQUE BÁSICO";
+            SetNotice($"{ability}{(critical ? " · ¡CRÍTICO!" : "")}: {damage} de daño · Energía {data.Energy}/100.");
+        }
+        else if (action == 3)
+        {
+            guarding = true; data.Energy = Math.Min(100, data.Energy + (data.CharacterId == 1 ? 32 : 25));
+            SetNotice($"Postura defensiva: reducirás el próximo impacto y recargas energía ({data.Energy}/100).");
+        }
+        else if (action == 4)
         {
             int idx = data.Inventory.FindIndex(x => x.Contains("Poción") || x.Contains("Batería") || x.Contains("Botiquín"));
             if (idx < 0) { SetNotice("No tienes objetos de recuperación."); return; }
             string item = data.Inventory[idx]; data.Inventory.RemoveAt(idx); int heal = item.Contains("Botiquín") ? 45 : 30;
-            data.Hp = Math.Min(data.MaxHp, data.Hp + heal); SetNotice($"Usaste {item} y recuperaste {heal} de salud.");
+            data.Hp = Math.Min(data.MaxHp, data.Hp + heal);
+            SetNotice($"Usaste {item} y recuperaste {heal} de salud.");
         }
         if (enemy.Hp <= 0)
         {
@@ -438,14 +508,31 @@ internal sealed class AdventureGameControl : UserControl
         }
         else
         {
-            int incoming = Math.Max(4, 14 + data.World * 5 - DefensePower()); data.Hp = Math.Max(0, data.Hp - incoming);
+            if (enemy.Charging)
+            {
+                int incoming = Math.Max(8, 28 + data.World * 6 - DefensePower());
+                if (guarding) incoming = Math.Max(2, incoming / 5);
+                data.Hp = Math.Max(0, data.Hp - incoming); enemy.Charging = false;
+                SetNotice(guarding ? $"¡Bloqueo perfecto! El impacto pesado solo causa {incoming} de daño." : $"¡Ataque pesado! Recibiste {incoming} de daño.");
+            }
+            else if (combatRng.Next(100) < (enemy.Boss ? 38 : 25))
+            {
+                enemy.Charging = true;
+                SetNotice($"{enemy.Name} concentra energía. ¡Prepárate para su ataque pesado!");
+            }
+            else
+            {
+                int incoming = Math.Max(3, 14 + data.World * 5 - DefensePower());
+                if (guarding) incoming = Math.Max(1, incoming / 4);
+                data.Hp = Math.Max(0, data.Hp - incoming);
+                SetNotice(guarding ? $"Defendiste el impacto y recibiste {incoming} de daño." : $"El enemigo contraataca: {incoming} de daño.");
+            }
             if (data.Hp == 0) { data.Hp = Math.Max(35, data.MaxHp / 2); data.InDungeon = false; data.X = 2; data.Y = 10; enemy = null; mode = "map"; SetNotice("Reinicio de emergencia: regresaste al refugio con media salud."); }
-            else SetNotice($"El enemigo contraataca: {incoming} de daño. {enemy.Name}: {enemy.Hp}/{enemy.MaxHp}.");
         }
         UpdateHud(); canvas.Invalidate();
     }
 
-    private int AttackPower() => 16 + data.Level * 3 + (data.Weapon.Contains("Rifle") ? 16 : data.Weapon.Contains("Espada") ? 12 : data.Weapon.Contains("Lanza") ? 10 : 0);
+    private int AttackPower() => 15 + data.Level * 3 + (data.Weapon.Contains("Rifle") ? 16 : data.Weapon.Contains("Espada") ? 12 : data.Weapon.Contains("Lanza") ? 10 : 0) + (data.CharacterId == 4 ? 5 : data.CharacterId == 2 ? 2 : 0);
     private int DefensePower() => data.Level * 2 + (data.Armor.Contains("Blindaje") || data.Armor.Contains("Armadura") ? 12 : data.Armor.Contains("Traje") ? 8 : 3);
     private int ExperienceToNext() => data.Level * 100;
     private void GainExperience(int amount)
@@ -471,8 +558,8 @@ internal sealed class AdventureGameControl : UserControl
     private void DiscoverAroundPlayer()
     {
         const int radius = 5;
-        for (int y = Math.Max(0, data.Y - radius); y <= Math.Min(MapHeight - 1, data.Y + radius); y++)
-            for (int x = Math.Max(0, data.X - radius); x <= Math.Min(MapWidth - 1, data.X + radius); x++)
+        for (int y = data.Y - radius; y <= data.Y + radius; y++)
+            for (int x = data.X - radius; x <= data.X + radius; x++)
                 if (Math.Abs(x - data.X) + Math.Abs(y - data.Y) <= radius && !IsDiscovered(x, y))
                     data.DiscoveredTiles.Add(DiscoveryKey(x, y));
     }
@@ -481,17 +568,17 @@ internal sealed class AdventureGameControl : UserControl
     {
         g.Clear(Color.FromArgb(15, 22, 34)); g.SmoothingMode = SmoothingMode.AntiAlias;
         if (bounds.Width < 20 || bounds.Height < 20) return;
-        string[] map = data.InDungeon ? Dungeon : Maps[data.World - 1];
-        int cols = map[0].Length, rows = map.Length;
         int tile = Math.Max(20, Math.Min(bounds.Width / 26, bounds.Height / 17));
-        int visibleCols = Math.Min(cols, bounds.Width / tile + 2), visibleRows = Math.Min(rows, bounds.Height / tile + 2);
+        int visibleCols = bounds.Width / tile + 2, visibleRows = bounds.Height / tile + 2;
         int px = data.InDungeon ? data.DungeonX : data.X, py = data.InDungeon ? data.DungeonY : data.Y;
-        int startX = Math.Clamp(px - visibleCols / 2, 0, Math.Max(0, cols - visibleCols));
-        int startY = Math.Clamp(py - visibleRows / 2, 0, Math.Max(0, rows - visibleRows));
+        int startX = data.InDungeon ? Math.Clamp(px - visibleCols / 2, 0, Math.Max(0, DungeonWidth - visibleCols)) : px - visibleCols / 2;
+        int startY = data.InDungeon ? Math.Clamp(py - visibleRows / 2, 0, Math.Max(0, DungeonHeight - visibleRows)) : py - visibleRows / 2;
+        if (data.InDungeon) { visibleCols = Math.Min(visibleCols, DungeonWidth); visibleRows = Math.Min(visibleRows, DungeonHeight); }
         int ox = (bounds.Width - visibleCols * tile) / 2, oy = (bounds.Height - visibleRows * tile) / 2;
         for (int y = startY; y < startY + visibleRows; y++) for (int x = startX; x < startX + visibleCols; x++)
         {
-            char ch = map[y][x]; var rect = new Rectangle(ox + (x - startX) * tile, oy + (y - startY) * tile, tile, tile);
+            char ch = data.InDungeon ? Dungeon[y][x] : GetWorldTile(data.World, x, y);
+            var rect = new Rectangle(ox + (x - startX) * tile, oy + (y - startY) * tile, tile, tile);
             if (!data.InDungeon && !IsDiscovered(x, y))
             {
                 using var fog = new SolidBrush(Color.FromArgb(252, 5, 10, 22));
@@ -543,7 +630,7 @@ internal sealed class AdventureGameControl : UserControl
     {
         Color baseColor = world switch { 2 => Color.FromArgb(93, 89, 72), 3 => Color.FromArgb(133, 157, 169), 4 => Color.FromArgb(76, 83, 125), _ => Color.FromArgb(79, 124, 77) };
         using var b = new SolidBrush(baseColor); g.FillRectangle(b, r);
-        int shade = ((x * 17 + y * 31) % 13);
+        int shade = (int)(CellNoise(world, x, y) % 13);
         using var d = new SolidBrush(Color.FromArgb(20 + shade, world == 3 ? 255 : 18, world == 3 ? 255 : 31, world == 4 ? 255 : 20));
         g.FillEllipse(d, r.Left + r.Width / 5, r.Top + r.Height / 4, Math.Max(3, r.Width / 4), Math.Max(3, r.Height / 5));
     }
@@ -801,35 +888,47 @@ internal sealed class AdventureGameControl : UserControl
         DrawBattleHealth(g, 28, 96, Math.Min(b.Width / 3, 330), data.Hp, data.MaxHp, data.Explorer, Color.FromArgb(66, 224, 173), label, small);
         DrawBattleHealth(g, b.Width - Math.Min(b.Width / 3, 330) - 28, 96, Math.Min(b.Width / 3, 330), enemy.Hp, enemy.MaxHp, enemy.Name, Color.FromArgb(255, 91, 117), label, small);
         if (data.IrisAwake) g.DrawString("IRIS · APOYO ACTIVO  +8 DAÑO", small, cyan, 28, 136);
+        var energyBar = new Rectangle(28, 162, 230, 10);
+        using (var energyBack = new SolidBrush(Color.FromArgb(180, 12, 18, 35))) g.FillRectangle(energyBack, energyBar);
+        using (var energyFill = new SolidBrush(Color.FromArgb(80, 215, 255))) g.FillRectangle(energyFill, energyBar.Left, energyBar.Top, energyBar.Width * data.Energy / 100, energyBar.Height);
+        g.DrawString($"ENERGÍA {data.Energy}/100 · ESPECIAL 35", small, cyan, 28, 174);
+        if (enemy.Charging)
+        {
+            using var warning = new SolidBrush(Color.FromArgb(245, 255, 172, 87));
+            g.DrawString("⚠ ATAQUE PESADO CARGADO · DEFIÉNDETE", label, warning, b.Width / 2 - 150, b.Height / 2 - 25);
+        }
         DrawBattleActionButtons(g, b, label, small);
     }
 
     private void HandleCanvasClick(Point point, Rectangle bounds)
     {
         if (mode != "battle") return;
-        int buttonWidth = Math.Min(190, (bounds.Width - 48) / 3), gap = 10, total = buttonWidth * 3 + gap * 2;
+        int gap = 8, buttonWidth = Math.Min(176, (bounds.Width - 56 - gap * 4) / 5), total = buttonWidth * 5 + gap * 4;
         int left = (bounds.Width - total) / 2, top = bounds.Height - 76;
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 5; i++)
             if (new Rectangle(left + i * (buttonWidth + gap), top, buttonWidth, 58).Contains(point)) { BattleAction(i + 1); return; }
     }
 
     private void DrawBattleActionButtons(Graphics g, Rectangle bounds, Font label, Font small)
     {
-        int buttonWidth = Math.Min(190, (bounds.Width - 48) / 3), gap = 10, total = buttonWidth * 3 + gap * 2;
+        int gap = 8, buttonWidth = Math.Min(176, (bounds.Width - 56 - gap * 4) / 5), total = buttonWidth * 5 + gap * 4;
         int left = (bounds.Width - total) / 2, top = bounds.Height - 76;
-        string[] titles = ["1  GOLPE", "2  RECUPERAR", "3  RETIRARSE"];
-        string[] subtitles = [data.IrisAwake ? "Combo con IRIS" : data.Weapon, "Usar botiquín", enemy.Boss ? "Jefe bloquea la salida" : "Abandonar duelo"];
-        for (int i = 0; i < 3; i++)
+        string[] titles = ["1  ATAQUE", "2  ESPECIAL", "3  DEFENSA", "4  OBJETO", "5  HUIR"];
+        string[] subtitles = [data.Weapon, $"35 energía · crítico {CriticalChance()}%", "Bloquea · +25 energía", "Botiquín / poción", enemy.Boss ? "Jefe bloquea" : "70% de escape"];
+        for (int i = 0; i < 5; i++)
         {
             var rect = new Rectangle(left + i * (buttonWidth + gap), top, buttonWidth, 58);
-            using var fill = new LinearGradientBrush(rect, i == 0 ? Color.FromArgb(83, 41, 168) : Color.FromArgb(24, 45, 78), i == 0 ? Color.FromArgb(28, 111, 174) : Color.FromArgb(13, 25, 48), LinearGradientMode.Vertical);
-            using var border = new Pen(i == 0 ? Color.FromArgb(140, 122, 229, 255) : Color.FromArgb(95, 102, 160, 205), 1.3f);
+            Color accent = i switch { 0 => Color.FromArgb(83, 41, 168), 1 => Color.FromArgb(139, 47, 106), 2 => Color.FromArgb(33, 109, 99), _ => Color.FromArgb(24, 45, 78) };
+            using var fill = new LinearGradientBrush(rect, accent, Color.FromArgb(13, 25, 48), LinearGradientMode.Vertical);
+            using var border = new Pen(i < 3 ? Color.FromArgb(140, 122, 229, 255) : Color.FromArgb(95, 102, 160, 205), 1.3f);
             FillRoundedRectangle(g, fill, rect, 9); DrawRoundedRectangle(g, border, rect, 9);
             using var white = new SolidBrush(Color.White); using var muted = new SolidBrush(Color.FromArgb(177, 205, 225));
             g.DrawString(titles[i], label, white, rect.Left + 12, rect.Top + 7);
             g.DrawString(subtitles[i], small, muted, rect.Left + 12, rect.Top + 31);
         }
     }
+
+    private int CriticalChance() => data.CharacterId switch { 2 => 32, 3 => 30, 4 => 18, _ => 22 };
 
     private static void DrawBattleHealth(Graphics g, int x, int y, int width, int hp, int maxHp, string name, Color fill, Font label, Font small)
     {
@@ -864,61 +963,57 @@ internal sealed class AdventureGameControl : UserControl
         g.SmoothingMode = old;
     }
 
-    private static string[][] BuildMaps()
+    // Deterministic coordinate-based terrain: no map edges, and a region
+    // regenerates identically whenever a saved explorer returns to it.
+    private static char GetWorldTile(int world, int x, int y)
     {
-        var result = new string[4][];
-        for (int world = 1; world <= 4; world++)
+        uint noise = CellNoise(world, x, y);
+        int terrain = (int)(noise % 100);
+        char tile = world switch
         {
-            var map = Enumerable.Range(0, MapHeight).Select(_ => Enumerable.Repeat('.', MapWidth).ToArray()).ToArray();
-            // Give each reality a distinct silhouette before carving its walkable streets.
-            for (int y = 1; y < MapHeight - 1; y++) for (int x = 1; x < MapWidth - 1; x++)
-            {
-                int region = (x / 16 + y / 10 + world) % 4;
-                if (world == 1 && region is 0 or 1 && ((x * 13 + y * 7 + 11) % 5 < 2)) map[y][x] = 'T';
-                if (world == 1 && ((x >= 13 && x <= 15 && y >= 2 && y <= 7) || (x >= 45 && x <= 48 && y >= 26 && y <= 31))) map[y][x] = '~';
-                if (world == 2 && ((x >= 3 && x <= 8 && y >= 3 && y <= 5) || (x >= 12 && x <= 16 && y >= 3 && y <= 5) || (x >= 24 && x <= 29 && y >= 3 && y <= 5))) map[y][x] = 'H';
-                if (world == 2 && region is 1 or 3 && ((x * 5 + y * 3) % 11 == 0)) map[y][x] = '#';
-                if (world == 3 && ((x >= 11 && x <= 13 && y >= 2 && y <= 8) || (x >= 16 && x <= 18 && y >= 12 && y <= 18) || (x >= 42 && x <= 45 && y >= 23 && y <= 29))) map[y][x] = '~';
-                if (world == 3 && region is 0 or 2 && ((x + y * 2) % 13 == 0)) map[y][x] = '#';
-                if (world == 4 && region is 1 or 2 && ((x * 3 + y * 5) % 17 == 0)) map[y][x] = '#';
-            }
-            if (world == 1)
-                foreach (var p in new[] { (3, 6), (5, 6), (3, 8), (25, 6), (27, 6), (25, 8) }) PlaceBuilding(map, p.Item1, p.Item2);
-            else if (world == 2)
-                foreach (var p in new[] { (3, 7), (11, 7), (15, 7), (24, 7), (4, 14), (26, 14) }) PlaceBuilding(map, p.Item1, p.Item2);
-            else if (world == 3)
-                foreach (var p in new[] { (4, 5), (6, 5), (25, 5), (27, 5), (25, 7) }) PlaceBuilding(map, p.Item1, p.Item2);
-            else
-                foreach (var p in new[] { (3, 4), (5, 4), (12, 4), (14, 4), (23, 4), (25, 4), (3, 15), (5, 15), (24, 15), (26, 15) }) PlaceBuilding(map, p.Item1, p.Item2);
-            for (int x = 1; x < MapWidth - 1; x++) map[10][x] = '.';
-            for (int y = 7; y <= 13; y++) map[y][7] = '.';
-            for (int y = 4; y <= 10; y++) map[y][21] = '.';
-            // Carve bridges and streets so every important location stays reachable.
-            if (world == 3) for (int x = 10; x <= 19; x++) map[10][x] = '.';
-            if (world == 4) for (int y = 4; y <= 15; y++) { map[y][10] = '.'; map[y][16] = '.'; }
-            map[10][2] = '.'; map[9][6] = 'Q'; map[10][8] = 'D'; map[5][12] = 'C'; map[5][18] = 'E'; map[14][12] = 'E'; map[10][28] = 'P'; map[15][22] = 'B';
-            // Ensure a clear path from the spawn through the town to the dungeon and portal.
-            for (int x = 2; x <= 10; x++) map[10][x] = '.';
-            for (int y = 8; y <= 10; y++) map[y][8] = '.';
-            for (int x = 8; x <= 21; x++) map[10][x] = '.';
-            for (int y = 10; y <= 15; y++) map[y][21] = '.';
-            for (int x = 21; x <= 28; x++) map[10][x] = '.';
-            map[9][6] = 'Q'; map[10][8] = 'D'; map[5][12] = 'C'; map[5][18] = 'E'; map[14][12] = 'E'; map[10][28] = 'P'; map[15][22] = 'B';
-            // Three optional landmarks reward exploration beyond the starting valley.
-            map[20][35] = 'C'; map[31][49] = 'Q'; map[6][51] = 'C';
-            // Mazmorra approach is kept clear; the actual interior is its own navigable tile map.
-            result[world - 1] = map.Select(row => new string(row)).ToArray();
-        }
-        return result;
+            1 => terrain < 16 ? 'T' : RiverAt(x, y) ? '~' : '.',
+            2 => terrain < 11 ? 'H' : terrain < 19 ? '#' : '.',
+            3 => terrain < 13 ? '~' : terrain < 20 ? '#' : '.',
+            _ => terrain < 16 ? '#' : '.'
+        };
+
+        // Each 32x32 region owns stable encounter and cache coordinates.
+        int cx = FloorDiv(x, 32), cy = FloorDiv(y, 32);
+        uint region = CellNoise(world * 13, cx, cy);
+        int localX = PositiveMod(x, 32), localY = PositiveMod(y, 32);
+        int enemyX = 2 + (int)(region % 27), enemyY = 2 + (int)((region >> 8) % 27);
+        int cacheX = 2 + (int)((region >> 16) % 27), cacheY = 2 + (int)((region >> 24) % 27);
+        if (localX == enemyX && localY == enemyY && (region & 3) != 0) tile = 'E';
+        else if (localX == cacheX && localY == cacheY && (region & 3) == 0) tile = 'C';
+
+        // Handcrafted landmarks anchor the opening chapter near the refuge.
+        if (y == 10 && x is >= 2 and <= 28) tile = '.';
+        if (x == 7 && y is >= 7 and <= 13) tile = '.';
+        if (x == 21 && y is >= 4 and <= 15) tile = '.';
+        if (x is >= 8 and <= 21 && y == 10) tile = '.';
+        if (x is >= 21 and <= 28 && y == 10) tile = '.';
+        if (x == 6 && y == 9) tile = 'Q';
+        if (x == 8 && y == 10) tile = 'D';
+        if ((x == 12 && y == 5) || (x == 35 && y == 20) || (x == 51 && y == 6)) tile = 'C';
+        if ((x == 18 && y == 5) || (x == 12 && y == 14) || (x == 44 && y == 27)) tile = 'E';
+        if (x == 28 && y == 10) tile = 'P';
+        if (x == 22 && y == 15) tile = 'B';
+        if (x == 49 && y == 31) tile = 'Q';
+        return tile;
     }
 
-    private static void PlaceBuilding(char[][] map, int x, int y)
+    private static bool RiverAt(int x, int y) => Math.Abs(PositiveMod(y - x / 9, 83) - 41) <= 1;
+    private static int FloorDiv(int value, int divisor) => (int)Math.Floor(value / (double)divisor);
+    private static int PositiveMod(int value, int divisor) => (value % divisor + divisor) % divisor;
+    private static uint CellNoise(int world, int x, int y)
     {
-        for (int row = y; row < Math.Min(MapHeight - 1, y + 2); row++)
-            for (int column = x; column < Math.Min(MapWidth - 1, x + 2); column++)
-                map[row][column] = 'H';
+        unchecked
+        {
+            uint h = (uint)world * 0x9E3779B9u ^ (uint)x * 0x85EBCA6Bu ^ (uint)y * 0xC2B2AE35u;
+            h ^= h >> 16; h *= 0x7FEB352Du; h ^= h >> 15; h *= 0x846CA68Bu; h ^= h >> 16;
+            return h;
+        }
     }
-
     protected override void Dispose(bool disposing) { if (disposing) heroPortrait?.Dispose(); base.Dispose(disposing); }
 }
 
