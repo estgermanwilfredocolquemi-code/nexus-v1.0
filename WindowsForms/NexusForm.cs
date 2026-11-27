@@ -667,8 +667,8 @@ internal sealed class NexusProgressBar : Control
         Height = 58;
         MinimumSize = new Size(140, 58);
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        animationTimer = new System.Windows.Forms.Timer { Interval = 70 };
-        animationTimer.Tick += (_, _) => Invalidate();
+        animationTimer = new System.Windows.Forms.Timer { Interval = 33 };
+        animationTimer.Tick += (_, _) => { if (Visible) Invalidate(); };
         animationTimer.Start();
     }
 
@@ -696,12 +696,13 @@ internal sealed class NexusProgressBar : Control
 
         int runnerX = Math.Clamp(bounds.Left + 1 + fillWidth, bounds.Left + 16, bounds.Right - 16);
         int runnerY = bounds.Top - 10;
-        double pulse = (Math.Sin(Environment.TickCount / 180.0) + 1) / 2;
-        bool stride = (Environment.TickCount / 105) % 2 == 0;
-        int haloAlpha = 28 + (int)(52 * pulse);
+        long tick = Environment.TickCount64;
+        double pulse = (Math.Sin(tick / 930.0) + 1) / 2;
+        double gait = Math.Sin(tick / 175.0);
+        int haloAlpha = 20 + (int)(12 * pulse);
         using (var halo = new SolidBrush(Color.FromArgb(haloAlpha, 57, 218, 255)))
             e.Graphics.FillEllipse(halo, runnerX - 18, runnerY - 16, 36, 32);
-        using (var ring = new Pen(Color.FromArgb(70 + (int)(100 * pulse), 84, 222, 255), 1.2f))
+        using (var ring = new Pen(Color.FromArgb(94 + (int)(22 * pulse), 84, 222, 255), 1.2f))
             e.Graphics.DrawEllipse(ring, runnerX - 12, runnerY - 13, 24, 26);
 
         // Robotito mecánico: la posición sigue el porcentaje y las piernas alternan el paso.
@@ -709,7 +710,7 @@ internal sealed class NexusProgressBar : Control
         e.Graphics.FillEllipse(shadow, runnerX - 11, bounds.Top - 1, 22, 5);
         using var metal = new SolidBrush(Color.FromArgb(226, 237, 246));
         using var darkMetal = new SolidBrush(Color.FromArgb(74, 112, 145));
-        using var visor = new SolidBrush(Color.FromArgb(55 + (int)(55 * pulse), 52, 219, 255));
+        using var visor = new SolidBrush(Color.FromArgb(105, 52, 219, 255));
         using var eye = new SolidBrush(Color.FromArgb(235, 240, 255));
         e.Graphics.FillEllipse(metal, runnerX - 7, runnerY - 15, 14, 12);
         e.Graphics.FillRectangle(visor, runnerX - 5, runnerY - 11, 10, 5);
@@ -717,16 +718,17 @@ internal sealed class NexusProgressBar : Control
         e.Graphics.FillEllipse(eye, runnerX + 1, runnerY - 10, 2, 2);
         e.Graphics.FillRectangle(darkMetal, runnerX - 10, runnerY - 3, 20, 13);
         e.Graphics.FillRectangle(metal, runnerX - 7, runnerY - 2, 14, 9);
-        using var core = new SolidBrush(Color.FromArgb(90 + (int)(145 * pulse), 65, 223, 255));
+        using var core = new SolidBrush(Color.FromArgb(205 + (int)(24 * pulse), 65, 223, 255));
         e.Graphics.FillRectangle(core, runnerX - 3, runnerY + 1, 6, 5);
 
         using var limb = new Pen(Color.FromArgb(235, 211, 229, 240), 2.8f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         using var joint = new SolidBrush(Color.FromArgb(75, 132, 160));
-        int step = stride ? 4 : -4;
-        e.Graphics.DrawLine(limb, runnerX - 5, runnerY + 8, runnerX - 6 + step, runnerY + 14);
-        e.Graphics.DrawLine(limb, runnerX + 5, runnerY + 8, runnerX + 6 - step, runnerY + 14);
-        e.Graphics.DrawLine(limb, runnerX - 9, runnerY, runnerX - 13, runnerY + (stride ? 4 : -3));
-        e.Graphics.DrawLine(limb, runnerX + 9, runnerY, runnerX + 13, runnerY + (stride ? -3 : 4));
+        float step = (float)(gait * 4.3);
+        float lift = Math.Abs((float)gait) * 1.6f;
+        e.Graphics.DrawLine(limb, runnerX - 5, runnerY + 8, runnerX - 6 + step, runnerY + 14 - Math.Max(0, lift * Math.Sign(gait)));
+        e.Graphics.DrawLine(limb, runnerX + 5, runnerY + 8, runnerX + 6 - step, runnerY + 14 - Math.Max(0, -lift * Math.Sign(gait)));
+        e.Graphics.DrawLine(limb, runnerX - 9, runnerY, runnerX - 13 - step * .55f, runnerY + 4 + step * .25f);
+        e.Graphics.DrawLine(limb, runnerX + 9, runnerY, runnerX + 13 + step * .55f, runnerY + 4 - step * .25f);
         e.Graphics.FillEllipse(joint, runnerX - 4, runnerY + 7, 8, 5);
 
         using var border = new Pen(Color.FromArgb(160 + (int)(75 * pulse), 92, 203, 255), 1.4f);
