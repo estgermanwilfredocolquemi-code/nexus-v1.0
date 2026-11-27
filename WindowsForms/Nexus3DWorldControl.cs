@@ -130,9 +130,9 @@ internal sealed class Nexus3DWorldControl : Control
     private void RenderScene()
     {
         int world = owner.SceneWorld;
-        float skyR = world switch { 1 => .31f, 2 => .23f, 3 => .45f, _ => .13f };
-        float skyG = world switch { 1 => .57f, 2 => .31f, 3 => .69f, _ => .20f };
-        float skyB = world switch { 1 => .76f, 2 => .34f, 3 => .82f, _ => .42f };
+        float skyR = world switch { 1 => .31f, 2 => .23f, 3 => .45f, 5 => .49f, _ => .13f };
+        float skyG = world switch { 1 => .57f, 2 => .31f, 3 => .69f, 5 => .69f, _ => .20f };
+        float skyB = world switch { 1 => .76f, 2 => .34f, 3 => .82f, 5 => .48f, _ => .42f };
         glClearColor(skyR, skyG, skyB, 1f); glFogfv(FogColor, [skyR, skyG, skyB, 1f]); glClear(ColorBufferBit | DepthBufferBit);
         glMatrixMode(Projection); glLoadIdentity();
         float aspect = Math.Max(1, ClientSize.Width) / (float)Math.Max(1, ClientSize.Height);
@@ -160,15 +160,23 @@ internal sealed class Nexus3DWorldControl : Control
                 int mapX = px + x, mapY = py + z;
                 char tile = owner.SceneTile(mapX, mapY);
                 DrawTerrainTile(world, tile, x, z, owner.SceneNoise(mapX, mapY));
-                if (tile == 'T') DrawTree(x, z, owner.SceneNoise(mapX, mapY));
+                if (tile == 'T') { if (world == 5) DrawJurassicPlant(x, z, owner.SceneNoise(mapX, mapY)); else DrawTree(x, z, owner.SceneNoise(mapX, mapY)); }
                 else if (tile == 'H') DrawBuilding(x, z, owner.SceneNoise(mapX, mapY));
                 else if (tile == '~') DrawWater(x, z, t, owner.SceneNoise(mapX, mapY));
                 else if (tile == '#' && world == 4) DrawBox(x, .52f, z, .72f, 1.04f, .72f, .34f, .22f, .49f);
                 else if (tile == '#') DrawRock(x, z, owner.SceneNoise(mapX, mapY));
                 else if (tile == '.' && owner.SceneNoise(mapX, mapY) % 23 == 0) DrawBush(x, z, owner.SceneNoise(mapX, mapY));
 
-                if (tile == 'E' && !owner.SceneEnemyCleared(mapX, mapY)) DrawCharacter(x, z, .92f, (mapX * 31 + mapY * 17) & 1, false, t, true, 0f);
-                if (tile == 'B' && !owner.SceneBossCleared()) DrawCharacter(x, z, 1.42f, 4, false, t, true, 0f);
+                if (tile == 'E' && !owner.SceneEnemyCleared(mapX, mapY))
+                {
+                    if (world == 5) DrawDinosaur(x, z, .86f, false, t);
+                    else DrawCharacter(x, z, .92f, (mapX * 31 + mapY * 17) & 1, false, t, true, 0f);
+                }
+                if (tile == 'B' && !owner.SceneBossCleared())
+                {
+                    if (world == 5) DrawDinosaur(x, z, 1.48f, true, t);
+                    else DrawCharacter(x, z, 1.42f, 4, false, t, true, 0f);
+                }
                 if (tile == 'Q') DrawQuestGiver(x, z, world, t);
                 if (tile == 'C' && !owner.SceneChestOpened(mapX, mapY)) DrawChest(x, z, t);
                 if (tile == 'D') DrawDungeonGate(x, z, t);
@@ -189,7 +197,8 @@ internal sealed class Nexus3DWorldControl : Control
                 if (Math.Abs(x) == 11 && Math.Abs(z) > 2 && z % 3 == 0) DrawTree(x, z, owner.SceneNoise(x, z));
             }
         DrawCharacter(-2.0f + heroX, 0.6f + heroZ, 1f, owner.SceneCharacter, true, t, true, 90f);
-        DrawCharacter(2.2f, -1.0f, owner.SceneEnemyIsBoss ? 1.5f : 1.05f, owner.SceneEnemyIsBoss ? 4 : 3, false, t, false, -90f);
+        if (world == 5) DrawDinosaur(2.2f, -1.0f, owner.SceneEnemyIsBoss ? 1.55f : 1.02f, owner.SceneEnemyIsBoss, t);
+        else DrawCharacter(2.2f, -1.0f, owner.SceneEnemyIsBoss ? 1.5f : 1.05f, owner.SceneEnemyIsBoss ? 4 : 3, false, t, false, -90f);
         DrawHealthBar3D(2.2f, owner.SceneEnemyHealthFraction, t);
         if (owner.SceneAttackFlash) DrawEnergyStrike(t);
     }
@@ -202,6 +211,7 @@ internal sealed class Nexus3DWorldControl : Control
             1 => (.19f + variation, .39f + variation, .17f),
             2 => (.28f + variation, .25f + variation, .20f),
             3 => (.62f + variation, .74f + variation, .79f),
+            5 => (.25f + variation, .43f + variation, .18f),
             _ => (.22f + variation, .19f, .33f + variation)
         };
         if (tile == '~') baseColor = world == 3 ? (.22f, .55f, .72f) : (.08f, .30f, .47f);
@@ -222,6 +232,16 @@ internal sealed class Nexus3DWorldControl : Control
         DrawEllipsoid(x, h * .76f, z, .62f, .68f, .58f, .10f, .32f, .13f);
         DrawEllipsoid(x - .29f, h * .65f, z + .06f, .38f, .45f, .37f, .15f, .39f, .15f);
         DrawEllipsoid(x + .28f, h * .68f, z - .05f, .38f, .43f, .37f, .13f, .36f, .14f);
+    }
+
+    private static void DrawJurassicPlant(float x, float z, uint seed)
+    {
+        float height = 1.5f + (seed % 90) / 160f;
+        DrawCylinder(x, 0, z, .11f, 0, height * .56f, .38f, .24f, .12f);
+        DrawEllipsoid(x, height * .72f, z, .62f, .72f, .58f, .18f, .43f, .12f);
+        DrawEllipsoid(x - .28f, height * .66f, z + .08f, .40f, .48f, .35f, .25f, .53f, .14f);
+        DrawEllipsoid(x + .30f, height * .68f, z - .05f, .42f, .46f, .37f, .21f, .48f, .12f);
+        DrawEllipsoid(x, height * .84f, z, .35f, .43f, .34f, .31f, .57f, .16f);
     }
 
     private static void DrawBush(float x, float z, uint seed)
@@ -311,6 +331,29 @@ internal sealed class Nexus3DWorldControl : Control
         DrawLeg(-.14f, swing, suit.r, suit.g, suit.b);
         DrawLeg(.14f, -swing, suit.r, suit.g, suit.b);
         if (hero && character == 4) DrawEllipsoid(-.36f, 1.06f, -.13f, .22f, .28f, .12f, .71f, .42f, .12f);
+        glPopMatrix();
+    }
+
+    private static void DrawDinosaur(float x, float z, float scale, bool alpha, float t)
+    {
+        float stride = (float)Math.Sin(t * (alpha ? 3.2 : 5.5)) * (alpha ? .10f : .18f);
+        float bodyR = alpha ? .40f : .34f, bodyG = alpha ? .22f : .31f, bodyB = alpha ? .13f : .19f;
+        glPushMatrix(); glTranslatef(x, 0, z); glScalef(scale, scale, scale);
+        DrawEllipsoid(0, .94f + Math.Abs(stride) * .12f, 0, .46f, .48f, .78f, bodyR, bodyG, bodyB);
+        DrawEllipsoid(0, 1.18f, .42f, .34f, .34f, .43f, bodyR * 1.12f, bodyG * 1.12f, bodyB * 1.12f);
+        DrawEllipsoid(0, 1.40f, .77f, .28f, .27f, .37f, bodyR * 1.08f, bodyG * 1.08f, bodyB * 1.08f);
+        DrawEllipsoid(-.13f, 1.47f, 1.04f, .055f, .06f, .035f, 1f, .76f, .25f);
+        DrawEllipsoid(.13f, 1.47f, 1.04f, .055f, .06f, .035f, 1f, .76f, .25f);
+        DrawEllipsoid(0, 1.27f, 1.08f, .20f, .10f, .19f, .19f, .09f, .06f);
+        DrawEllipsoid(0, .91f, -1.02f, .24f, .27f, .82f, bodyR * .82f, bodyG * .82f, bodyB * .82f);
+        DrawEllipsoid(-.34f, .70f + stride, .18f, .15f, .48f, .19f, bodyR * .78f, bodyG * .78f, bodyB * .78f);
+        DrawEllipsoid(.34f, .70f - stride, .18f, .15f, .48f, .19f, bodyR * .78f, bodyG * .78f, bodyB * .78f);
+        DrawEllipsoid(-.39f, .64f - stride, -.40f, .19f, .25f, .22f, bodyR, bodyG, bodyB);
+        DrawEllipsoid(.39f, .64f + stride, -.40f, .19f, .25f, .22f, bodyR, bodyG, bodyB);
+        DrawEllipsoid(-.13f, 1.02f, .56f, .13f, .15f, .20f, bodyR * .68f, bodyG * .68f, bodyB * .68f);
+        DrawEllipsoid(.13f, 1.02f, .56f, .13f, .15f, .20f, bodyR * .68f, bodyG * .68f, bodyB * .68f);
+        for (int i = 0; i < 5; i++)
+            DrawEllipsoid(0, 1.43f - i * .08f, .42f - i * .36f, alpha ? .13f : .08f, .13f, .13f, .71f, .53f, .22f);
         glPopMatrix();
     }
 

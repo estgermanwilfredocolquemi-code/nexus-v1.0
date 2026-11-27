@@ -11,12 +11,13 @@ NEXUS es una aventura de exploración para Windows escrita en C#. La campaña gr
 
 ## Mundo y campaña
 
-- Cuatro realidades: Bosque Vivo, Zona Cero, Frontera Criogénica y Ciudad NEXUS.
+- Cinco realidades: Bosque Vivo, Zona Cero, Frontera Criogénica, Ciudad NEXUS y el Valle Cretáceo.
 - El mapa exterior se genera por coordenadas y continúa al explorar en cualquier dirección. Bosques, ruinas, agua, enemigos y suministros vuelven a aparecer en el mismo sitio al regresar.
 - Vista en tercera persona, terreno tridimensional, árboles, arbustos, rocas, ruinas, portales, cofres y personajes con extremidades animadas.
 - Un prólogo presenta la primera fractura, el misterio de IRIS y el conflicto con el Titán. Cada héroe tiene un origen y una ventaja jugable.
-- Mara, Tarek, Niva y Kael ofrecen encargos: puedes aceptarlos, completar su objetivo y volver a reclamar la recompensa.
-- Las mazmorras conectan cada capítulo. El Titán final requiere nivel 2 e IRIS.
+- Mara, Tarek, Niva, Kael y Yara ofrecen encargos en diálogos propios con objetivo, recompensa y opciones para aceptar o rechazar.
+- Las mazmorras conectan cada capítulo. El Titán NEXUS requiere nivel 2 e IRIS; el Alfa del Cráter del mundo jurásico recomienda nivel 3.
+- La Reserva Velada añade flora prehistórica, raptores y al jefe Tyran, con equipo y misión secundaria propios.
 - La banda sonora instrumental original se genera en estéreo y se guarda en `%LOCALAPPDATA%\NEXUS\Audio`; no usa voces ni audio de los videos de referencia. El botón **Música** permite silenciarla o reactivarla.
 - Al ganar un combate aparece una pantalla de botín con la probabilidad de caída. Los enemigos normales empiezan en 51% en la primera realidad, la probabilidad sube con la región y el nivel, y queda limitada a 82%; los jefes entregan siempre su núcleo legendario.
 - El botín normal tiene calidades común, poco común, rara, épica y legendaria. Las armas y protecciones de mayor calidad elevan el ataque o la defensa, y el equipo disponible cambia según la realidad.

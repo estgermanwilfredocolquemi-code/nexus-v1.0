@@ -10,17 +10,19 @@ namespace NexusWinForms;
 /// <summary>The graphical, four-reality adventure layer for the original NEXUS game.</summary>
 internal sealed class AdventureGameControl : UserControl
 {
+    private const int WorldCount = 5;
     private static readonly Color Ink = Color.FromArgb(8, 12, 27);
     private static readonly Color PanelColor = Color.FromArgb(17, 29, 49);
     private static readonly Color Cyan = Color.FromArgb(119, 226, 255);
     private static readonly string SaveFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NEXUS", "Partidas");
-    private static readonly string[] Realities = ["TIERRA-01", "TIERRA-02", "TIERRA-07", "NEXUS-09"];
-    private static readonly string[] WorldNames = ["TIERRA-01 · BOSQUE VIVO", "TIERRA-02 · ZONA ZOMBI", "TIERRA-07 · FRONTERA CRIOGÉNICA", "NEXUS-09 · CIUDAD DIGITAL"];
+    private static readonly string[] Realities = ["TIERRA-01", "TIERRA-02", "TIERRA-07", "NEXUS-09", "TIERRA-04"];
+    private static readonly string[] WorldNames = ["TIERRA-01 · BOSQUE VIVO", "TIERRA-02 · ZONA ZOMBI", "TIERRA-07 · FRONTERA CRIOGÉNICA", "NEXUS-09 · CIUDAD DIGITAL", "TIERRA-04 · VALLE CRETÁCEO"];
     private static readonly string[] WorldLore = [
         "La primera fractura partió el cielo sobre el Bosque Vivo. Mara Veld mantiene encendido el Refugio Raíz mientras busca a la cartógrafa que oyó por primera vez la voz de IRIS.",
         "La Zona Cero cayó cuando Némesis reescribió las órdenes de evacuación. Vexa conoce cada calle, pero aún busca a su hermano entre las máquinas infectadas.",
         "La científica Niva Orun sigue transmitiendo desde una estación bajo el hielo. Sus datos podrían demostrar quién abrió realmente los portales.",
-        "En NEXUS-09, el Titán protege el núcleo de la anomalía. Kael-7 y los desertores saben que el robot no nació hostil: alguien le borró sus recuerdos."];
+        "En NEXUS-09, el Titán protege el núcleo de la anomalía. Kael-7 y los desertores saben que el robot no nació hostil: alguien le borró sus recuerdos.",
+        "TIERRA-04 conserva un ecosistema imposible bajo una cúpula temporal. La paleobióloga Yara Sol busca el origen de las criaturas y necesita que alguien cruce el valle sin despertar al depredador alfa."];
     // Each reality is a large, scrolling region. The camera only shows a portion
     // at once, and undiscovered terrain remains hidden until the explorer travels.
     // Each reality is a large, procedurally textured region with plenty of room
@@ -82,6 +84,7 @@ internal sealed class AdventureGameControl : UserControl
     private readonly Image heroPortrait;
     private SaveData data;
     private string mode = "map";
+    private bool prologuePending;
     private string notice = "Explora con WASD o flechas · E interactuar · I inventario · M misiones · Esc pausa";
     private EnemyData enemy;
     private Panel overlay;
@@ -97,9 +100,9 @@ internal sealed class AdventureGameControl : UserControl
     {
         this.returnToMenu = returnToMenu;
         Dock = DockStyle.Fill;
-        data = loaded ?? new SaveData { Explorer = explorer, Female = female, CharacterId = character, World = Math.Clamp(startingWorld, 1, 4) };
+        data = loaded ?? new SaveData { Explorer = explorer, Female = female, CharacterId = character, World = Math.Clamp(startingWorld, 1, WorldCount) };
         data.Explorer = string.IsNullOrWhiteSpace(data.Explorer) ? explorer : data.Explorer;
-        data.World = Math.Clamp(data.World, 1, 4); data.X = Math.Clamp(data.X, -1_000_000, 1_000_000); data.Y = Math.Clamp(data.Y, -1_000_000, 1_000_000);
+        data.World = Math.Clamp(data.World, 1, WorldCount); data.X = Math.Clamp(data.X, -1_000_000, 1_000_000); data.Y = Math.Clamp(data.Y, -1_000_000, 1_000_000);
         data.Level = Math.Max(1, data.Level); data.MaxHp = Math.Max(100, data.MaxHp); data.Hp = Math.Clamp(data.Hp, 1, data.MaxHp);
         data.Inventory ??= []; data.CompletedMissions ??= []; data.AcceptedMissions ??= []; data.OpenedChests ??= []; data.DefeatedBosses ??= []; data.ClearedEnemies ??= []; data.DiscoveredTiles ??= [];
         data.Energy = Math.Clamp(data.Energy, 0, 100);
@@ -121,8 +124,20 @@ internal sealed class AdventureGameControl : UserControl
         if (!data.PrologueSeen && loaded == null)
         {
             data.PrologueSeen = true;
-            BeginInvoke(new Action(ShowPrologue));
+            prologuePending = true;
         }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        if (!prologuePending || IsDisposed || Disposing) return;
+
+        prologuePending = false;
+        BeginInvoke((Action)(() =>
+        {
+            if (!IsDisposed && !Disposing) ShowPrologue();
+        }));
     }
 
     private void AddBattleAction(string text, int action)
@@ -187,7 +202,7 @@ internal sealed class AdventureGameControl : UserControl
             try
             {
                 var s = JsonSerializer.Deserialize<SaveData>(File.ReadAllText(path));
-                return s == null ? null : new SaveSummary(s.Name, s.Explorer, Math.Clamp(s.World, 1, 4), Math.Max(1, s.Level), Math.Max(0, s.Hp), Math.Max(1, s.MaxHp), Math.Max(0, s.Coins), s.Weapon ?? "Sin arma", s.Armor ?? "Sin protección", s.Updated);
+                return s == null ? null : new SaveSummary(s.Name, s.Explorer, Math.Clamp(s.World, 1, WorldCount), Math.Max(1, s.Level), Math.Max(0, s.Hp), Math.Max(1, s.MaxHp), Math.Max(0, s.Coins), s.Weapon ?? "Sin arma", s.Armor ?? "Sin protección", s.Updated);
             }
             catch { return null; }
         }).Where(x => x != null).OrderByDescending(x => x.Updated).ToList();
@@ -254,26 +269,26 @@ internal sealed class AdventureGameControl : UserControl
         panel.Controls.Add(MakeAction("EQUIPAR OBJETO DEL INVENTARIO", () => { CloseOverlay(); ShowInventory(); }));
     });
 
-    private void ShowMissions() => ShowOverlay("DIARIO DE MISIÓN", "Objetivo principal y encargos secundarios de las cuatro realidades.", panel =>
+    private void ShowMissions() => ShowOverlay("DIARIO DE MISIÓN", "Objetivo principal y encargos secundarios de las cinco realidades.", panel =>
     {
         var list = MakeList();
-        for (int w = 1; w <= 4; w++)
+        for (int w = 1; w <= WorldCount; w++)
         {
             string key = "main-" + w;
             bool mainComplete = data.CompletedMissions.Contains(key) || data.DefeatedBosses.Contains("boss-" + w);
-            string bossObjective = w == 4 && !data.IrisAwake ? "Nivel 2 requerido · despierta a IRIS" : "Derrota al jefe de la mazmorra";
+            string bossObjective = w == 4 && !data.IrisAwake ? "Nivel 2 requerido · despierta a IRIS" : w == 5 && data.Level < 3 ? "Nivel 3 recomendado · prepara tu equipo" : "Derrota al jefe de la mazmorra";
             list.Items.Add((mainComplete ? "✓" : "○") + $" PRINCIPAL · {WorldNames[w - 1]} · {(mainComplete ? "Jefe derrotado, portal abierto" : bossObjective)}");
-            string objective = w switch { 1 => "Abre un cofre de suministros", 2 => "Derrota 3 robots de esta zona", 3 => "Recupera el cofre de la mazmorra", _ => "Derrota al Titán NEXUS" };
+            string objective = w switch { 1 => "Abre un cofre de suministros", 2 => "Derrota 3 robots de esta zona", 3 => "Recupera el cofre de la mazmorra", 4 => "Derrota al Titán NEXUS", _ => "Rastrea 3 depredadores del valle" };
             bool sideComplete = data.CompletedMissions.Contains("side-" + w);
             string questState = sideComplete ? "COMPLETADA" : data.AcceptedMissions.Contains("side-" + w) ? "ACEPTADA" : "HABLA CON " + QuestNpcName(w).ToUpperInvariant();
             list.Items.Add((sideComplete ? "✓" : "○") + $" SECUNDARIA · {objective} · {questState} · {SecondaryProgress(w)}");
             list.Items.Add($"   Premio: {SecondaryReward(w)} + 30 créditos + 40 XP");
         }
-        list.Items.Add("Progreso de campaña: " + data.DefeatedBosses.Count + "/4 jefes · " + data.EnemiesDefeated + " enemigos derrotados · " + data.OpenedChests.Count + " cofres abiertos");
+        list.Items.Add("Progreso de campaña: " + data.DefeatedBosses.Count + "/" + WorldCount + " jefes · " + data.EnemiesDefeated + " enemigos derrotados · " + data.OpenedChests.Count + " cofres abiertos");
         panel.Controls.Add(list);
     });
 
-    private void ShowMapInfo() => ShowOverlay("MAPA DE REALIDADES", "Cuatro mundos conectados. Los portales se activan al derrotar al guardián de cada mazmorra.", panel =>
+    private void ShowMapInfo() => ShowOverlay("MAPA DE REALIDADES", "Cinco mundos conectados. Los portales se activan al derrotar al guardián de cada mazmorra.", panel =>
     {
         var list = MakeList();
         int revealed = data.DiscoveredTiles.Count(k => k.StartsWith(data.World + ":"));
@@ -281,9 +296,9 @@ internal sealed class AdventureGameControl : UserControl
         list.Items.Add("Mundo generado por regiones sin borde: explora en cualquier dirección; cada zona nueva se crea al llegar.");
         list.Items.Add("MARCADORES: Q encargo · C suministro · E enemigo · D mazmorra · P portal · B guardián");
         list.Items.Add("SEÑALES LEJANAS: suministro al este (35,20) · enlace de misión al sureste (49,31) · alijo al noreste (51,6)");
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < WorldCount; i++)
         {
-            string requirement = i == 3 ? " · Titán: nivel 2 + IRIS" : " · Derrota al guardián para abrir el portal";
+            string requirement = i == 3 ? " · Titán: nivel 2 + IRIS" : i == 4 ? " · Alfa: nivel 3 recomendado" : " · Derrota al guardián para abrir el portal";
             list.Items.Add($"MUNDO {i + 1} · {WorldNames[i]}{requirement}\r\n{WorldLore[i]}");
         }
         panel.Controls.Add(list);
@@ -405,19 +420,18 @@ internal sealed class AdventureGameControl : UserControl
                 3 => $"{npc}: En la estación hay datos capaces de estabilizar el clima. Recupera el módulo de la mazmorra. ¿Aceptas?",
                 _ => $"{npc}: El Titán controla la ciudad. Necesito que lo derrotes para abrir una ruta de evacuación. ¿Aceptas?"
             };
-            if (MessageBox.Show(offer, "ENCARGO · " + WorldNames[data.World - 1], MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
-            { SetNotice($"{npc}: Entiendo. Estaré aquí si cambias de idea."); return; }
-            data.AcceptedMissions.Add(key);
-            SetNotice($"{npc}: Encargo aceptado. Te espero para recibir el informe y la recompensa.");
-            UpdateHud(); canvas.Invalidate(); return;
+            ShowQuestOffer(npc, offer, key);
+            return;
         }
         int worldTwoDefeats = data.ClearedEnemies.Count(x => x.StartsWith("field-2-"));
+        int dinosaurDefeats = data.ClearedEnemies.Count(x => x.StartsWith("field-5-"));
         bool objectiveDone = data.World switch
         {
             1 => data.OpenedChests.Any(x => x.StartsWith("field-1-")),
             2 => worldTwoDefeats >= 3,
             3 => data.OpenedChests.Contains("dungeon-3"),
-            _ => data.DefeatedBosses.Contains("boss-4")
+            4 => data.DefeatedBosses.Contains("boss-4"),
+            _ => dinosaurDefeats >= 3
         };
         if (!objectiveDone)
         {
@@ -426,7 +440,8 @@ internal sealed class AdventureGameControl : UserControl
                 1 => "Abre un cofre de suministros.",
                 2 => $"Desactiva drones infectados: {worldTwoDefeats}/3.",
                 3 => "Recupera el módulo de datos de la mazmorra.",
-                _ => "Derrota al Titán NEXUS. Recomendado: nivel 2 con IRIS."
+                4 => "Derrota al Titán NEXUS. Recomendado: nivel 2 con IRIS.",
+                _ => $"Rastrea depredadores del valle: {Math.Min(3, dinosaurDefeats)}/3."
             };
             SetNotice($"{npc}: {progress} Vuelve conmigo cuando lo logres."); return;
         }
@@ -435,19 +450,58 @@ internal sealed class AdventureGameControl : UserControl
         SetNotice($"{npc}: ¡Lo conseguiste! +30 créditos, 40 XP y {reward}. Gracias por salvar nuestra gente.");
     }
 
+    private void ShowQuestOffer(string npc, string offer, string key)
+    {
+        string objective = data.World switch
+        {
+            1 => "Encuentra y abre un cofre de suministros en el bosque.",
+            2 => "Derrota tres autómatas infectados en la Zona Cero.",
+            3 => "Explora la mazmorra helada y recupera el módulo de datos.",
+            4 => "Derrota al Titán NEXUS y abre la ruta de evacuación.",
+            _ => "Rastrea tres raptores de ceniza en el valle jurásico."
+        };
+        ShowOverlay("ENCARGO · " + WorldNames[data.World - 1], npc, panel =>
+        {
+            var brief = new Label
+            {
+                Dock = DockStyle.Fill,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 12),
+                Text = offer + "\r\n\r\nOBJETIVO\r\n" + objective + "\r\n\r\nRECOMPENSA\r\n" + SecondaryReward(data.World) + " · 30 créditos · 40 XP",
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(12)
+            };
+            var reject = MakeAction("RECHAZAR", () =>
+            {
+                CloseOverlay();
+                SetNotice($"{npc}: Entiendo. Estaré aquí si cambias de idea.");
+            });
+            var accept = MakeAction("ACEPTAR ENCARGO", () =>
+            {
+                if (!data.AcceptedMissions.Contains(key)) data.AcceptedMissions.Add(key);
+                CloseOverlay();
+                SetNotice($"{npc}: Encargo aceptado. El objetivo quedó anotado en tu diario.");
+                UpdateHud(); canvas.Invalidate();
+            });
+            reject.Height = 40; accept.Height = 40;
+            panel.Controls.Add(brief); panel.Controls.Add(reject); panel.Controls.Add(accept);
+        });
+    }
+
     private static string QuestNpcName(int world) => world switch
     {
         1 => "Mara Veld, guardabosques del Refugio Raíz",
         2 => "Tarek Sola, médico de la Zona Cero",
         3 => "Doctora Niva Orun, última científica de la estación",
-        _ => "Kael-7, piloto de la resistencia NEXUS"
+        4 => "Kael-7, piloto de la resistencia NEXUS",
+        _ => "Yara Sol, paleobióloga de la Reserva Velada"
     };
 
     private void AdvanceWorld()
     {
         string boss = "boss-" + data.World;
         if (!data.DefeatedBosses.Contains(boss)) { SetNotice("El portal está sellado. Primero derrota al jefe dentro de la mazmorra."); return; }
-        if (data.World == 4) { data.CompletedMissions.Add("campaign-complete"); SetNotice("¡Campaña completada! La anomalía dimensional quedó contenida."); return; }
+        if (data.World == WorldCount) { data.CompletedMissions.Add("campaign-complete"); SetNotice("¡Campaña completada! La anomalía dimensional quedó contenida y la Reserva Velada está a salvo."); return; }
         data.CompletedMissions.Add("main-" + data.World);
         data.World++; data.X = 2; data.Y = 10; data.InDungeon = false; data.Hp = Math.Min(data.MaxHp, data.Hp + 25); DiscoverAroundPlayer();
         SetNotice("Portal activado: " + WorldNames[data.World - 1] + ". Recuperaste salud al cruzar.");
@@ -457,7 +511,7 @@ internal sealed class AdventureGameControl : UserControl
     {
         if (data.OpenedChests.Contains(key)) { SetNotice("Este cofre ya fue abierto."); return; }
         data.OpenedChests.Add(key); data.Coins += 20 + data.World * 5;
-        string reward = data.World switch { 1 => "Espada de guardabosques", 2 => "Blindaje antiplaga", 3 => "Rifle criogénico", _ => "Armadura NEXUS" };
+        string reward = data.World switch { 1 => "Espada de guardabosques", 2 => "Blindaje antiplaga", 3 => "Rifle criogénico", 4 => "Armadura NEXUS", _ => "Lanza de obsidiana" };
         data.Inventory.Add(reward); data.Inventory.Add("Poción médica");
         if (key.StartsWith("dungeon-")) data.CompletedMissions.Add("cache-" + data.World);
         SetNotice($"Cofre abierto: {reward}, una poción y {20 + data.World * 5} créditos."); UpdateHud(); canvas.Invalidate();
@@ -468,7 +522,8 @@ internal sealed class AdventureGameControl : UserControl
         1 => "Botiquín de campo",
         2 => "Blindaje reforzado",
         3 => "Rifle de precisión",
-        _ => "Armadura de fase"
+        4 => "Armadura de fase",
+        _ => "Lanza de obsidiana"
     };
 
     private string SecondaryProgress(int world)
@@ -479,7 +534,8 @@ internal sealed class AdventureGameControl : UserControl
             1 => data.OpenedChests.Any(x => x.StartsWith("field-1-")) ? "1/1 cofre" : "0/1 cofres",
             2 => $"{Math.Min(3, data.ClearedEnemies.Count(x => x.StartsWith("field-2-")))}/3 robots",
             3 => data.OpenedChests.Contains("dungeon-3") ? "datos recuperados" : "cofre de mazmorra pendiente",
-            _ => data.DefeatedBosses.Contains("boss-4") ? "Titán derrotado" : "Titán pendiente"
+            4 => data.DefeatedBosses.Contains("boss-4") ? "Titán derrotado" : "Titán pendiente",
+            _ => $"{Math.Min(3, data.ClearedEnemies.Count(x => x.StartsWith("field-5-")))}/3 depredadores"
         };
     }
 
@@ -496,8 +552,15 @@ internal sealed class AdventureGameControl : UserControl
             SetNotice("IRIS: Necesito que alcances el nivel 2 para sincronizarme contigo.");
             canvas.Invalidate(); return;
         }
+        if (boss && data.World == 5 && data.Level < 3)
+        {
+            SetNotice("El Alfa del valle es peligroso. Se recomienda nivel 3, equipo mejorado y suministros.");
+            canvas.Invalidate(); return;
+        }
         int hp = (boss ? 85 : 34) + data.World * (boss ? 25 : 12);
-        enemy = new EnemyData { Name = boss ? new[] { "", "Coloso de raíces", "Némesis infectada", "Guardián criogénico", "Titán NEXUS" }[data.World] : new[] { "", "Autómata de vigilancia", "Robot infectado", "Centinela de hielo", "Dron de la brecha" }[data.World], Hp = hp, MaxHp = hp, Boss = boss, Key = key };
+        string[] bossNames = ["", "Coloso de raíces", "Némesis infectada", "Guardián criogénico", "Titán NEXUS", "Tyran, Alfa del Cráter"];
+        string[] enemyNames = ["", "Autómata de vigilancia", "Robot infectado", "Centinela de hielo", "Dron de la brecha", "Raptor de ceniza"];
+        enemy = new EnemyData { Name = boss ? bossNames[data.World] : enemyNames[data.World], Hp = hp, MaxHp = hp, Boss = boss, Key = key };
         mode = "battle"; battleActions.Visible = true; SetNotice("¡Encuentro! El enemigo telegrafía sus ataques pesados. Usa 1–5 para decidir."); canvas.Invalidate();
     }
 
@@ -624,21 +687,24 @@ internal sealed class AdventureGameControl : UserControl
                 1 => ["Espada de la primera grieta"],
                 2 => ["Blindaje de Némesis"],
                 3 => ["Rifle del último invierno"],
-                _ => ["Armadura del Titán"]
+                4 => ["Armadura del Titán"],
+                _ => ["Filo del Alfa"]
             },
             "ÉPICO" => data.World switch
             {
                 1 => ["Espada de savia estelar"],
                 2 => ["Blindaje antiplaga"],
                 3 => ["Rifle criogénico"],
-                _ => ["Rifle NEXUS"]
+                4 => ["Rifle NEXUS"],
+                _ => ["Arco de tendón"]
             },
             "RARO" => data.World switch
             {
                 1 => ["Espada de guardabosques"],
                 2 => ["Blindaje de Némesis"],
                 3 => ["Rifle criogénico"],
-                _ => ["Armadura de fase"]
+                4 => ["Armadura de fase"],
+                _ => ["Grebas de explorador"]
             },
             "POCO COMÚN" => ["Botiquín de campo", "Batería de fase"],
             _ => ["Chatarra robótica", "Poción médica", "Fibra de bioma"]
@@ -1130,6 +1196,7 @@ internal sealed class AdventureGameControl : UserControl
             1 => terrain < 16 ? 'T' : RiverAt(x, y) ? '~' : '.',
             2 => terrain < 11 ? 'H' : terrain < 19 ? '#' : '.',
             3 => terrain < 13 ? '~' : terrain < 20 ? '#' : '.',
+            5 => terrain < 8 ? 'T' : terrain < 13 ? '#' : '.',
             _ => terrain < 16 ? '#' : '.'
         };
 

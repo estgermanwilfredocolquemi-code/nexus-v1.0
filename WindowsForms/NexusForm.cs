@@ -352,16 +352,17 @@ internal sealed class NexusForm : Form
     private void ShowWorldSelection()
     {
         var page = new Panel { Dock = DockStyle.Fill, BackColor = Ink, BackgroundImage = LoadArtwork(hubPath), BackgroundImageLayout = ImageLayout.Stretch };
-        page.Controls.Add(MakeSectionHeader("SELECCIONA UNA REALIDAD", "Cada dimensión tiene su propio mapa, terreno y enemigos. Puedes comenzar por cualquiera de las cuatro."));
+        page.Controls.Add(MakeSectionHeader("SELECCIONA UNA REALIDAD", "Cinco dimensiones con terreno, criaturas y rutas propias. El valle cretáceo es una expedición de alto riesgo."));
         var worlds = new (string Name, string Description, Color Accent)[]
         {
             ("TIERRA-01 · BOSQUE VIVO", "Bosques, río, refugio y ruinas antiguas.", Color.FromArgb(86, 200, 121)),
             ("TIERRA-02 · ZONA ZOMBI", "Calles destruidas, edificios evacuados y robots infectados.", Color.FromArgb(212, 127, 81)),
             ("TIERRA-07 · FRONTERA CRIOGÉNICA", "Glaciares, pasos helados y una estación científica.", Color.FromArgb(103, 197, 235)),
-            ("NEXUS-09 · CIUDAD DIGITAL", "Avenidas de neón, barreras de datos y la ciudad central.", Color.FromArgb(166, 117, 255))
+            ("NEXUS-09 · CIUDAD DIGITAL", "Avenidas de neón, barreras de datos y la ciudad central.", Color.FromArgb(166, 117, 255)),
+            ("TIERRA-04 · VALLE CRETÁCEO", "Selva antigua, helechos gigantes y depredadores. Alfa recomendado: nivel 3.", Color.FromArgb(192, 166, 78))
         };
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Padding = new Padding(36, 88, 36, 82), BackColor = Color.FromArgb(212, 6, 8, 27) };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2, Padding = new Padding(28, 88, 28, 82), BackColor = Color.FromArgb(212, 6, 8, 27) };
+        for (int i = 0; i < 3; i++) grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333f));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         for (int i = 0; i < worlds.Length; i++)
         {
@@ -369,16 +370,77 @@ internal sealed class NexusForm : Form
             var card = new Panel { Dock = DockStyle.Fill, BackColor = selectedWorld == world ? item.Accent : Color.FromArgb(44, 39, 74), Padding = new Padding(2), Margin = new Padding(10) };
             var surface = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(13, 14, 35), Padding = new Padding(18), Cursor = Cursors.Hand };
             var name = new Label { Text = item.Name, Dock = DockStyle.Top, Height = 42, ForeColor = item.Accent, Font = new Font("Segoe UI", 13, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
+            var preview = new Panel { Dock = DockStyle.Top, Height = 78, BackColor = Color.FromArgb(10, 14, 26), Margin = new Padding(0, 0, 0, 8) };
+            preview.Paint += (_, e) => DrawWorldPreview(e.Graphics, preview.ClientRectangle, world, item.Accent);
             var description = new Label { Text = item.Description, Dock = DockStyle.Fill, ForeColor = Color.FromArgb(226, 221, 244), Font = new Font("Segoe UI", 11), TextAlign = ContentAlignment.MiddleLeft };
             var choose = StyledButton(selectedWorld == world ? "DIMENSIÓN ELEGIDA ✓" : "ELEGIR ESTA DIMENSIÓN", Color.FromArgb(41, 30, 82), Color.White, 260, 40); choose.Dock = DockStyle.Bottom;
             void SelectWorld() { selectedWorld = world; ShowWorldSelection(); }
             choose.Click += (_, _) => SelectWorld(); surface.Click += (_, _) => SelectWorld(); name.Click += (_, _) => SelectWorld(); description.Click += (_, _) => SelectWorld();
-            surface.Controls.Add(description); surface.Controls.Add(choose); surface.Controls.Add(name); card.Controls.Add(surface); grid.Controls.Add(card, i % 2, i / 2);
+            surface.Controls.Add(description); surface.Controls.Add(choose); surface.Controls.Add(name); surface.Controls.Add(preview); card.Controls.Add(surface);
+            int row = i / 3, column = i % 3;
+            if (row == 1 && worlds.Length == 5) column++;
+            grid.Controls.Add(card, column, row);
         }
         var footer = new Panel { Dock = DockStyle.Bottom, Height = 64, BackColor = Color.FromArgb(235, 8, 7, 26), Padding = new Padding(20, 10, 20, 10) };
         var back = StyledButton("← PERSONAJE", Color.FromArgb(30, 22, 58), Color.White, 165, 42); back.Dock = DockStyle.Left; back.Click += (_, _) => ShowCharacterSelection();
         var start = StyledButton("COMENZAR EN ESTA REALIDAD  →", Purple, Color.White, 330, 42); start.Dock = DockStyle.Right; start.Click += (_, _) => StartAdventure(null, selectedWorld);
         footer.Controls.Add(start); footer.Controls.Add(back); page.Controls.Add(grid); page.Controls.Add(footer); ReplacePage(page); AcceptButton = start;
+    }
+
+    private static void DrawWorldPreview(Graphics graphics, Rectangle bounds, int world, Color accent)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0) return;
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var sky = new LinearGradientBrush(bounds, Color.FromArgb(30, 47, 71), Color.FromArgb(12, 18, 31), LinearGradientMode.Vertical);
+        graphics.FillRectangle(sky, bounds);
+        using var glow = new SolidBrush(Color.FromArgb(120, accent));
+        graphics.FillEllipse(glow, bounds.Right - 72, 8, 43, 43);
+        using var far = new SolidBrush(Color.FromArgb(85, accent));
+        using var near = new SolidBrush(Color.FromArgb(110, accent.R / 2, accent.G / 2, accent.B / 2));
+        graphics.FillPolygon(far, [new Point(bounds.Left, bounds.Bottom - 13), new Point(bounds.Left + bounds.Width / 4, 25), new Point(bounds.Left + bounds.Width / 2, bounds.Bottom - 16), new Point(bounds.Left + bounds.Width * 3 / 4, 34), new Point(bounds.Right, bounds.Bottom - 10), new Point(bounds.Right, bounds.Bottom), new Point(bounds.Left, bounds.Bottom)]);
+        graphics.FillPolygon(near, [new Point(bounds.Left, bounds.Bottom - 10), new Point(bounds.Left + bounds.Width / 3, 41), new Point(bounds.Left + bounds.Width * 2 / 3, bounds.Bottom - 18), new Point(bounds.Right, 47), new Point(bounds.Right, bounds.Bottom), new Point(bounds.Left, bounds.Bottom)]);
+
+        using var silhouette = new SolidBrush(Color.FromArgb(223, 8, 13, 20));
+        if (world == 2 || world == 4)
+        {
+            int seed = world == 2 ? 0 : 1;
+            for (int i = 0; i < 7; i++)
+            {
+                int width = 17 + (i % 3) * 8, height = 24 + ((i + seed) % 4) * 11;
+                int x = bounds.Left + i * (bounds.Width / 6) - 4;
+                graphics.FillRectangle(silhouette, x, bounds.Bottom - height, width, height);
+                if (world == 2 && i % 2 == 0) graphics.FillPolygon(silhouette, [new Point(x, bounds.Bottom - height), new Point(x + width / 2, bounds.Bottom - height - 9), new Point(x + width, bounds.Bottom - height)]);
+                if (world == 4 && i % 2 == 0) graphics.FillRectangle(glow, x + width / 2 - 2, bounds.Bottom - height + 8, 3, 18);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < 6; i++)
+            {
+                int x = bounds.Left + 8 + i * (bounds.Width / 6);
+                int height = 22 + (i % 3) * 7;
+                graphics.FillRectangle(silhouette, x + 11, bounds.Bottom - height - 10, 4, height);
+                graphics.FillEllipse(silhouette, x, bounds.Bottom - height - 22, 27, 26);
+                if (world == 5)
+                {
+                    graphics.FillEllipse(silhouette, x - 6, bounds.Bottom - height - 3, 20, 15);
+                    graphics.FillEllipse(silhouette, x + 12, bounds.Bottom - height - 27, 18, 19);
+                }
+            }
+        }
+        if (world == 5)
+        {
+            // A small original dinosaur silhouette makes the prehistoric world recognizable at a glance.
+            int ground = bounds.Bottom - 13, dx = bounds.Left + bounds.Width / 2;
+            graphics.FillEllipse(silhouette, dx - 12, ground - 23, 38, 22);
+            graphics.FillEllipse(silhouette, dx + 13, ground - 35, 17, 18);
+            graphics.FillPolygon(silhouette, [new Point(dx - 10, ground - 14), new Point(dx - 38, ground - 6), new Point(dx - 13, ground - 8)]);
+            graphics.FillRectangle(silhouette, dx - 8, ground - 8, 5, 11);
+            graphics.FillRectangle(silhouette, dx + 9, ground - 8, 5, 11);
+            graphics.FillEllipse(glow, dx + 24, ground - 29, 3, 3);
+        }
+        using var line = new Pen(Color.FromArgb(95, accent), 1.2f);
+        graphics.DrawLine(line, bounds.Left, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
     }
 
     private void AddCharacterCard(TableLayoutPanel grid, int column, int characterId, string name, string description, string imageName, Color accent)
@@ -492,7 +554,7 @@ internal sealed class NexusForm : Form
         var heading = new Label { Text = "ELIGE UNA EXPEDICIÓN", Left = 18, Top = 14, Width = 700, Height = 32, ForeColor = Cyan, Font = new Font("Segoe UI", 15, FontStyle.Bold) };
         var subheading = new Label { Text = "Revisa el mundo, nivel, salud y equipo guardados antes de continuar.", Left = 18, Top = 45, Width = 700, Height = 25, ForeColor = Color.FromArgb(201, 212, 235), Font = new Font("Segoe UI", 9) };
         var list = new ListBox { Left = 18, Top = 76, Width = 724, Height = 320, BackColor = Color.FromArgb(10, 9, 29), ForeColor = Color.White, Font = new Font("Segoe UI", 10), DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 62, IntegralHeight = false };
-        string[] worlds = ["TIERRA-01 · BOSQUE VIVO", "TIERRA-02 · ZONA ZOMBI", "TIERRA-07 · FRONTERA CRIOGÉNICA", "NEXUS-09 · CIUDAD DIGITAL"];
+        string[] worlds = ["TIERRA-01 · BOSQUE VIVO", "TIERRA-02 · ZONA ZOMBI", "TIERRA-07 · FRONTERA CRIOGÉNICA", "NEXUS-09 · CIUDAD DIGITAL", "TIERRA-04 · VALLE CRETÁCEO"];
         list.DrawItem += (_, e) =>
         {
             if (e.Index < 0 || e.Index >= list.Items.Count) return;
@@ -505,7 +567,7 @@ internal sealed class NexusForm : Form
             using var detailFont = new Font("Segoe UI", 8.5f);
             e.Graphics.FillRectangle(background, e.Bounds);
             e.Graphics.DrawString($"{save.Name}  ·  {save.Explorer}", titleFont, titleBrush, e.Bounds.Left + 12, e.Bounds.Top + 8);
-            e.Graphics.DrawString($"{worlds[Math.Clamp(save.World, 1, 4) - 1]}  ·  NIVEL {save.Level}  ·  ♥ {save.Hp}/{save.MaxHp}  ·  ◈ {save.Coins} créditos", detailFont, detailBrush, e.Bounds.Left + 12, e.Bounds.Top + 31);
+            e.Graphics.DrawString($"{worlds[Math.Clamp(save.World, 1, 5) - 1]}  ·  NIVEL {save.Level}  ·  ♥ {save.Hp}/{save.MaxHp}  ·  ◈ {save.Coins} créditos", detailFont, detailBrush, e.Bounds.Left + 12, e.Bounds.Top + 31);
             e.Graphics.DrawString($"Arma: {save.Weapon}  ·  Equipo: {save.Armor}  ·  Guardada: {save.Updated:g}", detailFont, detailBrush, e.Bounds.Left + 12, e.Bounds.Top + 46);
             e.DrawFocusRectangle();
         };
@@ -523,7 +585,7 @@ internal sealed class NexusForm : Form
         {
             if (list.SelectedIndex < 0 || list.SelectedIndex >= saves.Count) return;
             var selectedSave = saves[list.SelectedIndex];
-            string summary = $"{selectedSave.Name}\r\n{worlds[Math.Clamp(selectedSave.World, 1, 4)]} · Nivel {selectedSave.Level}\r\nSalud {selectedSave.Hp}/{selectedSave.MaxHp} · {selectedSave.Coins} créditos\r\nArma: {selectedSave.Weapon} · Protección: {selectedSave.Armor}";
+            string summary = $"{selectedSave.Name}\r\n{worlds[Math.Clamp(selectedSave.World, 1, 5) - 1]} · Nivel {selectedSave.Level}\r\nSalud {selectedSave.Hp}/{selectedSave.MaxHp} · {selectedSave.Coins} créditos\r\nArma: {selectedSave.Weapon} · Protección: {selectedSave.Armor}";
             if (MessageBox.Show("¿Continuar con esta partida?\r\n\r\n" + summary, "NEXUS · confirmar carga", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             dialog.Tag = selectedSave.Name; dialog.DialogResult = DialogResult.OK; dialog.Close();
         };
@@ -545,7 +607,7 @@ internal sealed class NexusForm : Form
     private void StartAdventure(AdventureGameControl.SaveData saved, int world)
     {
         AcceptButton = null;
-        selectedWorld = Math.Clamp(world, 1, 4);
+        selectedWorld = Math.Clamp(world, 1, 5);
         var adventure = new AdventureGameControl(explorerName, selectedFemale, selectedCharacter, ShowHub, saved, selectedWorld);
         activeAdventure = adventure;
         KeyDown -= ForwardAdventureKey;
