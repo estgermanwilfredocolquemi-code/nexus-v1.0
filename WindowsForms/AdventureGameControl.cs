@@ -544,8 +544,29 @@ internal sealed class AdventureGameControl : UserControl
         if (enemy.Hp <= 0)
         {
             var defeated = enemy; enemy = null; mode = "map"; battleActions.Visible = false; data.EnemiesDefeated++;
-            if (defeated.Boss) { data.DefeatedBosses.Add(defeated.Key); data.CompletedMissions.Add("main-" + data.World); data.Coins += 80; GainExperience(160); data.Inventory.Add("Núcleo de jefe"); SetNotice($"¡Jefe derrotado! +80 créditos, 160 XP y núcleo de jefe. El portal quedó abierto."); }
-            else { data.ClearedEnemies.Add(defeated.Key); data.Coins += 10; GainExperience(35); data.Inventory.Add("Chatarra robótica"); SetNotice("¡Victoria! +10 créditos, 35 XP y chatarra robótica."); }
+            int credits = defeated.Boss ? 80 : 10 + data.World * 2;
+            int experience = defeated.Boss ? 160 : 35 + data.World * 5;
+            data.Coins += credits;
+            LootReward reward = RollLootReward(defeated);
+            if (defeated.Boss)
+            {
+                data.DefeatedBosses.Add(defeated.Key);
+                data.CompletedMissions.Add("main-" + data.World);
+                data.Inventory.Add(reward.Item);
+                GainExperience(experience);
+            }
+            else
+            {
+                data.ClearedEnemies.Add(defeated.Key);
+                if (!string.IsNullOrEmpty(reward.Item)) data.Inventory.Add(reward.Item);
+                GainExperience(experience);
+            }
+            SetNotice(defeated.Boss
+                ? $"¡Jefe derrotado! +{credits} créditos, {experience} XP y núcleo legendario. El portal quedó abierto."
+                : $"¡Victoria! +{credits} créditos y {experience} XP · {reward.Item}");
+            UpdateHud();
+            canvas.Invalidate();
+            ShowLootReveal(defeated, reward, credits, experience);
         }
         else
         {
@@ -573,8 +594,98 @@ internal sealed class AdventureGameControl : UserControl
         UpdateHud(); canvas.Invalidate();
     }
 
-    private int AttackPower() => 15 + data.Level * 3 + (data.Weapon.Contains("Rifle") ? 16 : data.Weapon.Contains("Espada") ? 12 : data.Weapon.Contains("Lanza") ? 10 : 0) + (data.CharacterId == 4 ? 5 : data.CharacterId == 2 ? 2 : 0);
-    private int DefensePower() => data.Level * 2 + (data.Armor.Contains("Blindaje") || data.Armor.Contains("Armadura") ? 12 : data.Armor.Contains("Traje") ? 8 : 3);
+    private sealed record LootReward(string Item, string Rarity, int DropChance);
+
+    private LootReward RollLootReward(EnemyData defeated)
+    {
+        if (defeated.Boss)
+            return new LootReward("Núcleo de jefe [LEGENDARIO]", "LEGENDARIO", 100);
+
+        int chance = Math.Min(82, 46 + data.World * 5 + Math.Min(12, (data.Level - 1) * 2));
+        if (combatRng.Next(100) >= chance)
+            return new LootReward("", "SIN BOTÍN", chance);
+
+        int legendary = data.World >= 4 ? 2 : 1;
+        int epic = 3 + data.World - 1;
+        int rare = 9 + (data.World - 1) * 3;
+        int uncommon = 24;
+        int roll = combatRng.Next(100);
+        string rarity;
+        if (roll < legendary) rarity = "LEGENDARIO";
+        else if (roll < legendary + epic) rarity = "ÉPICO";
+        else if (roll < legendary + epic + rare) rarity = "RARO";
+        else if (roll < legendary + epic + rare + uncommon) rarity = "POCO COMÚN";
+        else rarity = "COMÚN";
+
+        string[] items = rarity switch
+        {
+            "LEGENDARIO" => data.World switch
+            {
+                1 => ["Espada de la primera grieta"],
+                2 => ["Blindaje de Némesis"],
+                3 => ["Rifle del último invierno"],
+                _ => ["Armadura del Titán"]
+            },
+            "ÉPICO" => data.World switch
+            {
+                1 => ["Espada de savia estelar"],
+                2 => ["Blindaje antiplaga"],
+                3 => ["Rifle criogénico"],
+                _ => ["Rifle NEXUS"]
+            },
+            "RARO" => data.World switch
+            {
+                1 => ["Espada de guardabosques"],
+                2 => ["Blindaje de Némesis"],
+                3 => ["Rifle criogénico"],
+                _ => ["Armadura de fase"]
+            },
+            "POCO COMÚN" => ["Botiquín de campo", "Batería de fase"],
+            _ => ["Chatarra robótica", "Poción médica", "Fibra de bioma"]
+        };
+        string item = items[combatRng.Next(items.Length)] + " [" + rarity + "]";
+        return new LootReward(item, rarity, chance);
+    }
+
+    private void ShowLootReveal(EnemyData defeated, LootReward reward, int credits, int experience)
+    {
+        Color rarityColor = reward.Rarity switch
+        {
+            "LEGENDARIO" => Color.FromArgb(255, 192, 76),
+            "ÉPICO" => Color.FromArgb(211, 113, 255),
+            "RARO" => Color.FromArgb(91, 170, 255),
+            "POCO COMÚN" => Color.FromArgb(95, 224, 167),
+            "COMÚN" => Color.FromArgb(205, 216, 229),
+            _ => Color.FromArgb(135, 151, 170)
+        };
+        string subtitle = $"{defeated.Name} · +{credits} créditos · +{experience} XP · probabilidad de objeto: {reward.DropChance}%";
+        ShowOverlay("SECUENCIA DE BOTÍN", subtitle, panel =>
+        {
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, BackColor = Color.Transparent };
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 27));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 30));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 22));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 21));
+            var emblem = new Label { Dock = DockStyle.Fill, Text = string.IsNullOrEmpty(reward.Item) ? "—" : "✦", ForeColor = rarityColor, Font = new Font("Segoe UI Symbol", 34, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
+            var item = new Label { Dock = DockStyle.Fill, Text = string.IsNullOrEmpty(reward.Item) ? "SIN OBJETO ESTA VEZ" : reward.Item, ForeColor = rarityColor, Font = new Font("Segoe UI", 17, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
+            var rarity = new Label { Dock = DockStyle.Fill, Text = string.IsNullOrEmpty(reward.Item) ? "El azar también forma parte de la expedición" : "CALIDAD " + reward.Rarity, ForeColor = rarityColor, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
+            var hint = new Label { Dock = DockStyle.Fill, Text = string.IsNullOrEmpty(reward.Item) ? "Sigue explorando: los enemigos reaparecen en nuevas rutas." : "Revisa el inventario y equipa armas o blindajes para mejorar sus atributos.", ForeColor = Color.FromArgb(198, 215, 234), Font = new Font("Segoe UI", 10), TextAlign = ContentAlignment.MiddleCenter };
+            layout.Controls.Add(emblem, 0, 0);
+            layout.Controls.Add(item, 0, 1);
+            layout.Controls.Add(rarity, 0, 2);
+            layout.Controls.Add(hint, 0, 3);
+            panel.Controls.Add(layout);
+        });
+    }
+
+    private static int GearRarityBonus(string gear) =>
+        gear.Contains("[LEGENDARIO]") ? 12 :
+        gear.Contains("[ÉPICO]") ? 8 :
+        gear.Contains("[RARO]") ? 5 :
+        gear.Contains("[POCO COMÚN]") ? 2 : 0;
+
+    private int AttackPower() => 15 + data.Level * 3 + (data.Weapon.Contains("Rifle") ? 16 : data.Weapon.Contains("Espada") ? 12 : data.Weapon.Contains("Lanza") ? 10 : 0) + GearRarityBonus(data.Weapon) + (data.CharacterId == 4 ? 5 : data.CharacterId == 2 ? 2 : 0);
+    private int DefensePower() => data.Level * 2 + (data.Armor.Contains("Blindaje") || data.Armor.Contains("Armadura") ? 12 : data.Armor.Contains("Traje") ? 8 : 3) + GearRarityBonus(data.Armor);
     private int ExperienceToNext() => data.Level * 100;
     private void GainExperience(int amount)
     {
