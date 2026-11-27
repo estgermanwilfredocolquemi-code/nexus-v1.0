@@ -696,9 +696,9 @@ internal sealed class NexusProgressBar : Control
 
         int runnerX = Math.Clamp(bounds.Left + 1 + fillWidth, bounds.Left + 16, bounds.Right - 16);
         int runnerY = bounds.Top - 10;
-        long tick = Environment.TickCount64;
-        double pulse = (Math.Sin(tick / 930.0) + 1) / 2;
-        double gait = Math.Sin(tick / 175.0);
+        long animationTick = Environment.TickCount64;
+        double pulse = (Math.Sin(animationTick / 930.0) + 1) / 2;
+        double gait = Math.Sin(animationTick / 175.0);
         int haloAlpha = 20 + (int)(12 * pulse);
         using (var halo = new SolidBrush(Color.FromArgb(haloAlpha, 57, 218, 255)))
             e.Graphics.FillEllipse(halo, runnerX - 18, runnerY - 16, 36, 32);
