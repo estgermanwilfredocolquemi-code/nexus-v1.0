@@ -331,10 +331,10 @@ internal sealed class NexusForm : Form
         for (int i = 0; i < 4; i++) cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
 
         var humanoImagen = selectedFemale ? "humana-mujer.png" : "humano-hombre.png";
-        AddCharacterCard(cards, 0, 1, selectedFemale ? "HUMANA" : "HUMANO", "Explorador NEXUS, listo para la aventura.", "portrait-" + humanoImagen, Color.FromArgb(34, 160, 255));
-        AddCharacterCard(cards, 1, 2, "ROBOT ALIADO", "Unidad tecnológica con escudo reforzado.", "portrait-robot-aliado.png", Color.FromArgb(36, 219, 151));
-        AddCharacterCard(cards, 2, 3, "HUMANO ENEMIGO", "Entidad hostil con gran capacidad de ataque.", "portrait-humano-enemigo.png", Color.FromArgb(255, 65, 91));
-        AddCharacterCard(cards, 3, 4, "ROBOT ENEMIGO", "Máquina de combate con blindaje pesado.", "portrait-robot-enemigo.png", Color.FromArgb(255, 169, 43));
+        AddCharacterCard(cards, 0, 1, selectedFemale ? "LÍA VELD · HUMANA" : "ELIÁN VELD · HUMANO", "Nació en el Refugio Raíz durante la primera fractura. Su madre, cartógrafa, desapareció buscando la señal que luego se convertiría en IRIS. Pasiva: recupera energía extra al cubrirse. Especial: Eco Dimensional.", "portrait-" + humanoImagen, Color.FromArgb(34, 160, 255));
+        AddCharacterCard(cards, 1, 2, "AUR0 · ROBOT ALIADO", "Construido para evacuar civiles; se negó a obedecer la orden de borrarlos. Encontró a IRIS en un satélite caído. Pasiva: blindaje reforzado. Especial: Sobrecarga Iónica. Crítico: 32%.", "portrait-robot-aliado.png", Color.FromArgb(36, 219, 151));
+        AddCharacterCard(cards, 2, 3, "VEXA · EXILIADA", "Nació en la Zona Cero y aprendió a sobrevivir entre máquinas infectadas. Busca a su hermano, convertido en el núcleo de Némesis. Pasiva: instinto de cazadora. Especial: Ruptura de Fase. Crítico: 30%.", "portrait-humano-enemigo.png", Color.FromArgb(255, 65, 91));
+        AddCharacterCard(cards, 3, 4, "BASTIÓN-9 · DESERTO", "Antiguo guardia del Titán NEXUS. Conserva las memorias de la ciudad que le ordenaron destruir. Pasiva: gran potencia de ataque. Especial: Cañón de Asalto. Crítico: 18%.", "portrait-robot-enemigo.png", Color.FromArgb(255, 169, 43));
 
         var footer = new Panel { Dock = DockStyle.Bottom, Height = 66, BackColor = Color.FromArgb(235, 8, 7, 26), Padding = new Padding(20, 10, 20, 10) };
         var back = StyledButton("← VOLVER", Color.FromArgb(30, 22, 58), Color.White, 145, 42);
@@ -738,4 +738,3 @@ internal sealed class NexusProgressBar : Control
         base.Dispose(disposing);
     }
 }
-
