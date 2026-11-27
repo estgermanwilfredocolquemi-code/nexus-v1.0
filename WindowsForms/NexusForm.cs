@@ -47,8 +47,9 @@ internal sealed class NexusForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Ink;
         ForeColor = Color.White;
+        NexusSoundtrack.Start();
         ShowSplash();
-        FormClosing += (_, _) => { closing = true; inputReady.Set(); lobbyGlowTimer?.Stop(); loadingTimer?.Stop(); };
+        FormClosing += (_, _) => { closing = true; inputReady.Set(); lobbyGlowTimer?.Stop(); loadingTimer?.Stop(); NexusSoundtrack.Stop(); };
     }
 
     private void ShowSplash()
@@ -131,7 +132,7 @@ internal sealed class NexusForm : Form
         var content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(22), BackColor = Color.FromArgb(9, 9, 27) };
         var hero = new Panel { Dock = DockStyle.Fill, BackColor = Panel, BackgroundImage = LoadArtwork(hubPath), BackgroundImageLayout = ImageLayout.Zoom, Padding = new Padding(30) };
         var welcome = new Label { Text = "NEXUS", Dock = DockStyle.Top, Height = 76, ForeColor = Color.White, Font = new Font("Segoe UI", 34, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
-        var subtitle = new Label { Text = "LA ANOMALÍA HA ROTO LAS FRONTERAS ENTRE DIMENSIONES.\r\nElige a tu explorador, selecciona una realidad y recupera los núcleos.", Dock = DockStyle.Top, Height = 74, ForeColor = Color.FromArgb(230, 224, 245), Font = new Font("Segoe UI", 12, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
+        var subtitle = new Label { Text = "HACE 17 AÑOS, UNA FRACTURA APAGÓ LAS ESTRELLAS.\r\nIRIS despertó en una señal perdida; ahora cuatro realidades piden ayuda y el Titán guarda la verdad.", Dock = DockStyle.Top, Height = 74, ForeColor = Color.FromArgb(230, 224, 245), Font = new Font("Segoe UI", 12, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
         var badge = new Label { Text = "MISIÓN PRINCIPAL     ◆     LA ANOMALÍA PERDIDA", Dock = DockStyle.Bottom, Height = 42, ForeColor = Cyan, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
         var launchStrip = new Panel { Dock = DockStyle.Bottom, Height = 104, BackColor = Color.FromArgb(218, 7, 9, 28), Padding = new Padding(16, 14, 16, 14) };
         var launch = StyledButton("INICIAR EXPEDICIÓN   ▶", Color.FromArgb(111, 31, 211), Color.White, 260, 62);
@@ -738,3 +739,4 @@ internal sealed class NexusProgressBar : Control
         base.Dispose(disposing);
     }
 }
+
