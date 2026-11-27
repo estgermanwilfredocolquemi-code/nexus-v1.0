@@ -18,7 +18,7 @@ internal static class NexusSoundtrack
     {
         lock (Gate)
         {
-            trackPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NEXUS", "Audio", "nexus-ambient.wav");
+            trackPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NEXUS", "Audio", "nexus-ambient-v2.wav");
             Directory.CreateDirectory(Path.GetDirectoryName(trackPath)!);
             if (!File.Exists(trackPath)) GenerateOriginalTrack(trackPath);
             Enabled = true;
@@ -44,36 +44,53 @@ internal static class NexusSoundtrack
 
     private static void GenerateOriginalTrack(string path)
     {
-        const int sampleRate = 22050, seconds = 32;
+        const int sampleRate = 22050, seconds = 40, channels = 2;
         int samples = sampleRate * seconds;
-        int[] roots = [146, 110, 130, 98];
-        using var stream = File.Create(path);
-        using var writer = new BinaryWriter(stream);
-        writer.Write("RIFF"u8); writer.Write(36 + samples * 2); writer.Write("WAVE"u8);
-        writer.Write("fmt "u8); writer.Write(16); writer.Write((short)1); writer.Write((short)1);
-        writer.Write(sampleRate); writer.Write(sampleRate * 2); writer.Write((short)2); writer.Write((short)16);
-        writer.Write("data"u8); writer.Write(samples * 2);
-        for (int i = 0; i < samples; i++)
+        int blockAlign = channels * 2;
+        int dataBytes = samples * blockAlign;
+        int[] roots = [110, 123, 98, 130];
+        string temporaryPath = path + ".building";
+        using (var stream = File.Create(temporaryPath))
+        using (var writer = new BinaryWriter(stream))
         {
-            double t = i / (double)sampleRate;
-            int chord = (int)(t / 4) % roots.Length;
-            double beat = t % 2;
-            double chordTime = t % 4;
-            int root = roots[chord];
-            double pad = Math.Sin(Tau * root * t) * .115
-                + Math.Sin(Tau * root * 1.5 * t + .2) * .050
-                + Math.Sin(Tau * root * 2 * t + .4) * .027
-                + Math.Sin(Tau * root * .5 * t) * .055;
-            int noteIndex = (int)(t * 2) % 4;
-            double notePhase = (t * 2) % 1;
-            double noteFrequency = noteIndex switch { 0 => root * 2, 1 => root * 5 / 2, 2 => root * 3, _ => root * 4 };
-            double pluck = Math.Sin(Tau * noteFrequency * notePhase) * Math.Exp(-4.5 * notePhase) * .18;
-            double pulse = Math.Sin(Tau * (t * 1.5 % 1)) * Math.Exp(-9 * (t * 1.5 % 1)) * .018;
-            double swell = .90 + .10 * Math.Sin(Tau * chordTime / 4);
-            double edgeFade = Math.Min(1, Math.Min(t / .5, (seconds - t) / .5));
-            double value = Math.Clamp((pad + pluck + pulse) * swell * Math.Max(0, edgeFade), -.75, .75);
-            writer.Write((short)(value * short.MaxValue));
+            writer.Write("RIFF"u8); writer.Write(36 + dataBytes); writer.Write("WAVE"u8);
+            writer.Write("fmt "u8); writer.Write(16); writer.Write((short)1); writer.Write((short)channels);
+            writer.Write(sampleRate); writer.Write(sampleRate * blockAlign); writer.Write((short)blockAlign); writer.Write((short)16);
+            writer.Write("data"u8); writer.Write(dataBytes);
+
+            int[] melodySteps = [4, 7, 9, 7, 5, 2, 7, 9];
+            for (int i = 0; i < samples; i++)
+            {
+                double t = i / (double)sampleRate;
+                int chord = (int)(t / 5) % roots.Length;
+                int root = roots[chord];
+                double chordTime = t % 5;
+                double pad = Math.Sin(Tau * root * .5 * t) * .075
+                    + Math.Sin(Tau * root * t) * .080
+                    + Math.Sin(Tau * root * 1.25 * t + .14) * .050
+                    + Math.Sin(Tau * root * 1.5 * t + .24) * .035
+                    + Math.Sin(Tau * root * 2 * t + .38) * .018;
+                double beat = (t * 2) % 1;
+                int note = melodySteps[(int)(t * 2) % melodySteps.Length];
+                double noteFrequency = root * Math.Pow(2, note / 12.0 + 1);
+                double pluck = (Math.Sin(Tau * noteFrequency * beat) + .26 * Math.Sin(Tau * noteFrequency * 2 * beat))
+                    * Math.Exp(-4.1 * beat) * .115;
+                double shimmerBeat = (t % 2);
+                double shimmerFreq = root * (chord % 2 == 0 ? 4 : 3);
+                double shimmer = Math.Sin(Tau * shimmerFreq * shimmerBeat) * Math.Exp(-2.8 * shimmerBeat) * .045;
+                double pulseBeat = t % 1;
+                double pulseFreq = 48 + 23 * pulseBeat;
+                double pulse = Math.Sin(Tau * pulseFreq * pulseBeat) * Math.Exp(-7 * pulseBeat) * .05;
+                double swell = .92 + .08 * Math.Sin(Tau * chordTime / 5);
+                double edgeFade = Math.Clamp(Math.Min(t / .8, (seconds - t) / .8), 0, 1);
+                double body = (pad + pulse) * swell;
+                double left = (body + pluck * .82 + shimmer * .72) * edgeFade;
+                double right = (body + pluck * 1.08 + shimmer) * edgeFade;
+                writer.Write((short)(Math.Clamp(left, -.7, .7) * short.MaxValue));
+                writer.Write((short)(Math.Clamp(right, -.7, .7) * short.MaxValue));
+            }
         }
+        File.Move(temporaryPath, path, true);
     }
 
     private const double Tau = Math.PI * 2;
