@@ -17,7 +17,9 @@ NEXUS es una aventura de exploración para Windows escrita en C#. La campaña gr
 - Un prólogo presenta la primera fractura, el misterio de IRIS y el conflicto con el Titán. Cada héroe tiene un origen y una ventaja jugable.
 - Mara, Tarek, Niva y Kael ofrecen encargos: puedes aceptarlos, completar su objetivo y volver a reclamar la recompensa.
 - Las mazmorras conectan cada capítulo. El Titán final requiere nivel 2 e IRIS.
-- El tema ambiental original se genera y se guarda en `%LOCALAPPDATA%\NEXUS\Audio`; el botón **Música** permite silenciarlo o reactivarlo.
+- La banda sonora instrumental original se genera en estéreo y se guarda en `%LOCALAPPDATA%\NEXUS\Audio`; no usa voces ni audio de los videos de referencia. El botón **Música** permite silenciarla o reactivarla.
+- Al ganar un combate aparece una pantalla de botín con la probabilidad de caída. Los enemigos normales empiezan en 51% en la primera realidad, la probabilidad sube con la región y el nivel, y queda limitada a 82%; los jefes entregan siempre su núcleo legendario.
+- El botín normal tiene calidades común, poco común, rara, épica y legendaria. Las armas y protecciones de mayor calidad elevan el ataque o la defensa, y el equipo disponible cambia según la realidad.
 
 ## Controles
 
