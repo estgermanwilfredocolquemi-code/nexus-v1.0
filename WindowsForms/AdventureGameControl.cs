@@ -21,8 +21,10 @@ internal sealed class AdventureGameControl : UserControl
         "Una ciudad evacuada quedó cubierta por la infección. Los robots de contención ya no distinguen aliados.",
         "La nieve oculta las ruinas de una estación científica. Sus guardianes protegen el núcleo de salto.",
         "La ciudad central de NEXUS está en manos de una inteligencia hostil. Derrota al Titán para cerrar la anomalía."];
-    private const int MapWidth = 32;
-    private const int MapHeight = 20;
+    // Each reality is a large, scrolling region. The camera only shows a portion
+    // at once, and undiscovered terrain remains hidden until the explorer travels.
+    private const int MapWidth = 64;
+    private const int MapHeight = 40;
     private static readonly string[][] Maps = BuildMaps();
 
     internal sealed class SaveData
@@ -47,6 +49,8 @@ internal sealed class AdventureGameControl : UserControl
         public List<string> OpenedChests { get; set; } = [];
         public List<string> DefeatedBosses { get; set; } = [];
         public List<string> ClearedEnemies { get; set; } = [];
+        public List<string> DiscoveredTiles { get; set; } = [];
+        public bool IrisAwake { get; set; }
         public bool InDungeon { get; set; }
         public int DungeonX { get; set; } = 1;
         public int DungeonY { get; set; } = 6;
@@ -75,6 +79,7 @@ internal sealed class AdventureGameControl : UserControl
     private string notice = "Explora con WASD o flechas · E interactuar · I inventario · M misiones · Esc pausa";
     private EnemyData enemy;
     private Panel overlay;
+    private DateTime battleImpactUntil = DateTime.MinValue;
 
     private static readonly string[] Dungeon = [
         "##############", "#....#.......#", "#....#..##...#", "#.......##...#", "###.#........#", "#...#..###...#", "#......#.....#", "#..##........#", "#............#", "##############"];
@@ -82,14 +87,18 @@ internal sealed class AdventureGameControl : UserControl
     private sealed class GameCanvas : Control
     {
         private readonly AdventureGameControl owner;
+        private readonly System.Windows.Forms.Timer battleAnimation = new() { Interval = 55 };
         internal GameCanvas(AdventureGameControl owner)
         {
             this.owner = owner; Dock = DockStyle.Fill; TabStop = true;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            MouseDown += (_, _) => Focus();
+            MouseDown += (_, e) => { owner.HandleCanvasClick(e.Location, ClientRectangle); Focus(); };
+            battleAnimation.Tick += (_, _) => { if (owner.mode == "battle") Invalidate(); };
+            battleAnimation.Start();
         }
         protected override void OnPaint(PaintEventArgs e) => owner.DrawWorld(e.Graphics, ClientRectangle);
         protected override void OnKeyDown(KeyEventArgs e) { owner.HandleKey(e); base.OnKeyDown(e); }
+        protected override void Dispose(bool disposing) { if (disposing) battleAnimation.Dispose(); base.Dispose(disposing); }
     }
 
     internal AdventureGameControl(string explorer, bool female, int character, Action returnToMenu, SaveData loaded = null, int startingWorld = 1)
@@ -100,7 +109,9 @@ internal sealed class AdventureGameControl : UserControl
         data.Explorer = string.IsNullOrWhiteSpace(data.Explorer) ? explorer : data.Explorer;
         data.World = Math.Clamp(data.World, 1, 4); data.X = Math.Clamp(data.X, 1, MapWidth - 2); data.Y = Math.Clamp(data.Y, 1, MapHeight - 2);
         data.Level = Math.Max(1, data.Level); data.MaxHp = Math.Max(100, data.MaxHp); data.Hp = Math.Clamp(data.Hp, 1, data.MaxHp);
-        data.Inventory ??= []; data.CompletedMissions ??= []; data.OpenedChests ??= []; data.DefeatedBosses ??= []; data.ClearedEnemies ??= [];
+        data.Inventory ??= []; data.CompletedMissions ??= []; data.OpenedChests ??= []; data.DefeatedBosses ??= []; data.ClearedEnemies ??= []; data.DiscoveredTiles ??= [];
+        data.IrisAwake |= data.Level >= 2;
+        DiscoverAroundPlayer();
         string portrait = data.CharacterId switch { 2 => "portrait-robot-aliado.png", 3 => "portrait-humano-enemigo.png", 4 => "portrait-robot-enemigo.png", _ => data.Female ? "portrait-humana-mujer.png" : "portrait-humano-hombre.png" };
         string portraitPath = Path.Combine(AppContext.BaseDirectory, portrait);
         if (File.Exists(portraitPath)) { using var image = Image.FromFile(portraitPath); heroPortrait = new Bitmap(image); }
@@ -203,7 +214,8 @@ internal sealed class AdventureGameControl : UserControl
         {
             string key = "main-" + w;
             bool mainComplete = data.CompletedMissions.Contains(key) || data.DefeatedBosses.Contains("boss-" + w);
-            list.Items.Add((mainComplete ? "✓" : "○") + $" PRINCIPAL · {WorldNames[w - 1]} · {(mainComplete ? "Jefe derrotado, portal abierto" : "Derrota al jefe de la mazmorra")}");
+            string bossObjective = w == 4 && !data.IrisAwake ? "Nivel 2 requerido · despierta a IRIS" : "Derrota al jefe de la mazmorra";
+            list.Items.Add((mainComplete ? "✓" : "○") + $" PRINCIPAL · {WorldNames[w - 1]} · {(mainComplete ? "Jefe derrotado, portal abierto" : bossObjective)}");
             string objective = w switch { 1 => "Abre un cofre de suministros", 2 => "Derrota 3 robots de esta zona", 3 => "Recupera el cofre de la mazmorra", _ => "Derrota al Titán NEXUS" };
             bool sideComplete = data.CompletedMissions.Contains("side-" + w);
             list.Items.Add((sideComplete ? "✓" : "○") + $" SECUNDARIA · {objective} · {SecondaryProgress(w)}");
@@ -216,7 +228,16 @@ internal sealed class AdventureGameControl : UserControl
     private void ShowMapInfo() => ShowOverlay("MAPA DE REALIDADES", "Cuatro mundos conectados. Los portales se activan al derrotar al guardián de cada mazmorra.", panel =>
     {
         var list = MakeList();
-        for (int i = 0; i < 4; i++) list.Items.Add($"MUNDO {i + 1} · {WorldNames[i]}\r\n{WorldLore[i]}");
+        int revealed = data.DiscoveredTiles.Count(k => k.StartsWith(data.World + ":"));
+        list.Items.Add($"SECTOR ACTUAL · X {data.X} / Y {data.Y} · {revealed} de {MapWidth * MapHeight} casillas descubiertas");
+        list.Items.Add("Explora con WASD o flechas: el mapa se revela a tu alrededor.");
+        list.Items.Add("MARCADORES: Q encargo · C suministro · D mazmorra · P portal · B guardián");
+        list.Items.Add("SEÑALES LEJANAS: suministro al este (35,20) · enlace de misión al sureste (49,31) · alijo al noreste (51,6)");
+        for (int i = 0; i < 4; i++)
+        {
+            string requirement = i == 3 ? " · Titán: nivel 2 + IRIS" : " · Derrota al guardián para abrir el portal";
+            list.Items.Add($"MUNDO {i + 1} · {WorldNames[i]}{requirement}\r\n{WorldLore[i]}");
+        }
         panel.Controls.Add(list);
     });
 
@@ -287,6 +308,7 @@ internal sealed class AdventureGameControl : UserControl
         if (ny < 0 || nx < 0 || ny >= map.Length || nx >= map[ny].Length || map[ny][nx] is '#' or 'T' or '~' or 'H') return;
         if (data.InDungeon) { data.DungeonX = nx; data.DungeonY = ny; }
         else { data.X = nx; data.Y = ny; }
+        if (!data.InDungeon) DiscoverAroundPlayer();
         char tile = map[ny][nx];
         if (tile == 'E' && !data.InDungeon) StartBattle(false, "field-" + data.World + "-" + nx + "-" + ny);
         else if (tile == 'B' && !data.InDungeon) StartBattle(true, "guardian-" + data.World);
@@ -337,7 +359,7 @@ internal sealed class AdventureGameControl : UserControl
         if (!data.DefeatedBosses.Contains(boss)) { SetNotice("El portal está sellado. Primero derrota al jefe dentro de la mazmorra."); return; }
         if (data.World == 4) { data.CompletedMissions.Add("campaign-complete"); SetNotice("¡Campaña completada! La anomalía dimensional quedó contenida."); return; }
         data.CompletedMissions.Add("main-" + data.World);
-        data.World++; data.X = 2; data.Y = 10; data.InDungeon = false; data.Hp = Math.Min(data.MaxHp, data.Hp + 25);
+        data.World++; data.X = 2; data.Y = 10; data.InDungeon = false; data.Hp = Math.Min(data.MaxHp, data.Hp + 25); DiscoverAroundPlayer();
         SetNotice("Portal activado: " + WorldNames[data.World - 1] + ". Recuperaste salud al cruzar.");
     }
 
@@ -374,6 +396,16 @@ internal sealed class AdventureGameControl : UserControl
     private void StartBattle(bool boss, string key)
     {
         if (data.ClearedEnemies.Contains(key) || data.DefeatedBosses.Contains(key)) return;
+        if (boss && data.World == 4 && data.Level < 2)
+        {
+            SetNotice("El Titán NEXUS recomienda nivel 2. Explora, completa encargos y vuelve cuando Iris despierte.");
+            canvas.Invalidate(); return;
+        }
+        if (boss && data.World == 4 && !data.IrisAwake)
+        {
+            SetNotice("IRIS: Necesito que alcances el nivel 2 para sincronizarme contigo.");
+            canvas.Invalidate(); return;
+        }
         int hp = (boss ? 85 : 34) + data.World * (boss ? 25 : 12);
         enemy = new EnemyData { Name = boss ? new[] { "", "Coloso de raíces", "Némesis infectada", "Guardián criogénico", "Titán NEXUS" }[data.World] : new[] { "", "Autómata de vigilancia", "Robot infectado", "Centinela de hielo", "Dron de la brecha" }[data.World], Hp = hp, MaxHp = hp, Boss = boss, Key = key };
         mode = "battle"; SetNotice("¡Encuentro! Pulsa 1 para atacar · 2 para usar objeto · 3 para retirarte."); canvas.Invalidate();
@@ -382,8 +414,15 @@ internal sealed class AdventureGameControl : UserControl
     private void BattleAction(int action)
     {
         if (enemy == null) return;
+        battleImpactUntil = DateTime.UtcNow.AddMilliseconds(450);
         if (action == 3) { if (enemy.Boss) SetNotice("No puedes abandonar un combate contra un jefe."); else { enemy = null; mode = "map"; SetNotice("Te retiraste del combate."); } canvas.Invalidate(); return; }
-        if (action == 1) { int damage = AttackPower(); enemy.Hp -= damage; SetNotice($"Golpeaste con {data.Weapon}: {damage} de daño."); }
+        if (action == 1)
+        {
+            int damage = AttackPower();
+            if (data.IrisAwake) damage += 8;
+            enemy.Hp -= damage;
+            SetNotice(data.IrisAwake ? $"Iris sincroniza tu ataque: {damage} de daño combinado." : $"Golpeaste con {data.Weapon}: {damage} de daño.");
+        }
         else
         {
             int idx = data.Inventory.FindIndex(x => x.Contains("Poción") || x.Contains("Batería") || x.Contains("Botiquín"));
@@ -412,10 +451,31 @@ internal sealed class AdventureGameControl : UserControl
     private void GainExperience(int amount)
     {
         data.Experience += amount;
-        while (data.Experience >= ExperienceToNext()) { data.Experience -= ExperienceToNext(); data.Level++; data.MaxHp += 15; data.Hp = data.MaxHp; SetNotice("¡Subiste al nivel " + data.Level + "! Salud y ataque aumentados."); }
+        while (data.Experience >= ExperienceToNext())
+        {
+            data.Experience -= ExperienceToNext(); data.Level++; data.MaxHp += 15; data.Hp = data.MaxHp;
+            if (data.Level >= 2 && !data.IrisAwake)
+            {
+                data.IrisAwake = true;
+                data.Inventory.Add("Módulo de sincronía IRIS");
+                SetNotice("¡Nivel 2! IRIS despierta y se une a la expedición. Sus pulsos refuerzan tus ataques.");
+            }
+            else SetNotice("¡Subiste al nivel " + data.Level + "! Salud y ataque aumentados.");
+        }
     }
-    private void UpdateHud() => hud.Text = $"  {data.Explorer}   ◆ {WorldNames[data.World - 1]}   ♥ {data.Hp}/{data.MaxHp}   LV {data.Level} · {data.Experience}/{ExperienceToNext()} XP   ◈ {data.Coins}   ⚔ {data.Weapon}";
+    private void UpdateHud() => hud.Text = $"  {data.Explorer}   ◆ {WorldNames[data.World - 1]}   ♥ {data.Hp}/{data.MaxHp}   LV {data.Level} · {data.Experience}/{ExperienceToNext()} XP   ◈ {data.Coins}   ⚔ {data.Weapon}   {(data.IrisAwake ? "◆ IRIS EN LÍNEA" : "IRIS · BLOQUEADA HASTA NIVEL 2")}";
     private void SetNotice(string text) { notice = text; status.Text = "  " + text; }
+
+    private string DiscoveryKey(int x, int y) => $"{data.World}:{x}:{y}";
+    private bool IsDiscovered(int x, int y) => data.DiscoveredTiles.Contains(DiscoveryKey(x, y));
+    private void DiscoverAroundPlayer()
+    {
+        const int radius = 5;
+        for (int y = Math.Max(0, data.Y - radius); y <= Math.Min(MapHeight - 1, data.Y + radius); y++)
+            for (int x = Math.Max(0, data.X - radius); x <= Math.Min(MapWidth - 1, data.X + radius); x++)
+                if (Math.Abs(x - data.X) + Math.Abs(y - data.Y) <= radius && !IsDiscovered(x, y))
+                    data.DiscoveredTiles.Add(DiscoveryKey(x, y));
+    }
 
     private void DrawWorld(Graphics g, Rectangle bounds)
     {
@@ -423,11 +483,21 @@ internal sealed class AdventureGameControl : UserControl
         if (bounds.Width < 20 || bounds.Height < 20) return;
         string[] map = data.InDungeon ? Dungeon : Maps[data.World - 1];
         int cols = map[0].Length, rows = map.Length;
-        int tile = Math.Max(14, Math.Min(bounds.Width / cols, bounds.Height / rows));
-        int ox = (bounds.Width - cols * tile) / 2, oy = (bounds.Height - rows * tile) / 2;
-        for (int y = 0; y < rows; y++) for (int x = 0; x < cols; x++)
+        int tile = Math.Max(20, Math.Min(bounds.Width / 26, bounds.Height / 17));
+        int visibleCols = Math.Min(cols, bounds.Width / tile + 2), visibleRows = Math.Min(rows, bounds.Height / tile + 2);
+        int px = data.InDungeon ? data.DungeonX : data.X, py = data.InDungeon ? data.DungeonY : data.Y;
+        int startX = Math.Clamp(px - visibleCols / 2, 0, Math.Max(0, cols - visibleCols));
+        int startY = Math.Clamp(py - visibleRows / 2, 0, Math.Max(0, rows - visibleRows));
+        int ox = (bounds.Width - visibleCols * tile) / 2, oy = (bounds.Height - visibleRows * tile) / 2;
+        for (int y = startY; y < startY + visibleRows; y++) for (int x = startX; x < startX + visibleCols; x++)
         {
-            char ch = map[y][x]; var rect = new Rectangle(ox + x * tile, oy + y * tile, tile, tile);
+            char ch = map[y][x]; var rect = new Rectangle(ox + (x - startX) * tile, oy + (y - startY) * tile, tile, tile);
+            if (!data.InDungeon && !IsDiscovered(x, y))
+            {
+                using var fog = new SolidBrush(Color.FromArgb(252, 5, 10, 22));
+                g.FillRectangle(fog, rect); using var edge = new Pen(Color.FromArgb(90, 29, 42, 62)); g.DrawRectangle(edge, rect);
+                continue;
+            }
             DrawTile(g, rect, ch, x, y);
             if (!data.InDungeon && ch == 'C' && data.OpenedChests.Contains($"field-{data.World}-{x}-{y}")) DrawGround(g, rect, data.World, x, y);
             if (!data.InDungeon && ch == 'E' && data.ClearedEnemies.Contains($"field-{data.World}-{x}-{y}")) DrawGround(g, rect, data.World, x, y);
@@ -440,11 +510,12 @@ internal sealed class AdventureGameControl : UserControl
             if (!data.InDungeon && ch == 'P') DrawPortal(g, rect);
             if (data.InDungeon && x == 1 && y == 7) DrawDoor(g, rect);
         }
-        int px = data.InDungeon ? data.DungeonX : data.X, py = data.InDungeon ? data.DungeonY : data.Y;
         int heroWidth = Math.Max(22, tile * 11 / 10), heroHeight = Math.Max(32, tile * 3 / 2);
-        DrawHero(g, new Rectangle(ox + px * tile + (tile - heroWidth) / 2, oy + (py + 1) * tile - heroHeight, heroWidth, heroHeight));
+        DrawHero(g, new Rectangle(ox + (px - startX) * tile + (tile - heroWidth) / 2, oy + (py - startY + 1) * tile - heroHeight, heroWidth, heroHeight));
+        if (!data.InDungeon && data.IrisAwake)
+            DrawIrisCompanion(g, new Rectangle(ox + (px - startX) * tile + tile / 2, oy + (py - startY) * tile + tile / 3, Math.Max(18, tile / 2), Math.Max(24, tile * 2 / 3)));
         using var titleFont = new Font("Segoe UI", 10, FontStyle.Bold);
-        string title = data.InDungeon ? $"MAZMORRA · {WorldNames[data.World - 1]}" : WorldNames[data.World - 1];
+        string title = data.InDungeon ? $"MAZMORRA · {WorldNames[data.World - 1]}" : $"{WorldNames[data.World - 1]} · SECTOR {px / 8 + 1}-{py / 8 + 1} · {data.DiscoveredTiles.Count(k => k.StartsWith(data.World + ":"))} ZONAS REVELADAS";
         using var titleBrush = new SolidBrush(Color.FromArgb(230, 231, 244, 255));
         g.DrawString(title, titleFont, titleBrush, 14, 12);
         if (mode == "battle") DrawBattle(g, bounds);
@@ -544,6 +615,23 @@ internal sealed class AdventureGameControl : UserControl
         using var body = new SolidBrush(data.CharacterId == 2 ? Color.FromArgb(78, 185, 205) : Color.FromArgb(220, 231, 239)); g.FillEllipse(body, r.Left + r.Width / 5, r.Top + r.Height / 4, r.Width * 3 / 5, r.Height * 3 / 4);
         using var head = new SolidBrush(Color.FromArgb(227, 197, 168)); g.FillEllipse(head, r.Left + r.Width / 4, r.Top, r.Width / 2, r.Height / 3);
         using var visor = new SolidBrush(Color.FromArgb(46, 199, 242)); g.FillRectangle(visor, r.Left + r.Width / 3, r.Top + r.Height / 8, r.Width / 3, r.Height / 10);
+    }
+
+    private static void DrawIrisCompanion(Graphics g, Rectangle r)
+    {
+        using var glow = new SolidBrush(Color.FromArgb(45, 66, 223, 255));
+        using var metal = new SolidBrush(Color.FromArgb(210, 138, 182, 206));
+        using var dark = new SolidBrush(Color.FromArgb(210, 35, 69, 96));
+        using var visor = new SolidBrush(Color.FromArgb(235, 67, 232, 255));
+        using var labelFont = new Font("Segoe UI", Math.Max(7, r.Width / 4), FontStyle.Bold);
+        using var labelBrush = new SolidBrush(Color.FromArgb(225, 170, 246, 255));
+        g.FillEllipse(glow, Rectangle.Inflate(r, 3, 3));
+        g.FillEllipse(metal, r.Left + r.Width / 5, r.Top, r.Width * 3 / 5, r.Height / 3);
+        g.FillRectangle(visor, r.Left + r.Width / 3, r.Top + r.Height / 7, r.Width / 3, Math.Max(2, r.Height / 12));
+        g.FillRectangle(dark, r.Left + r.Width / 6, r.Top + r.Height / 3, r.Width * 2 / 3, r.Height / 2);
+        g.FillRectangle(metal, r.Left + r.Width / 4, r.Top + r.Height / 3, r.Width / 2, r.Height / 2);
+        g.FillEllipse(visor, r.Left + r.Width / 2 - 2, r.Top + r.Height / 2, 4, 4);
+        g.DrawString("IRIS", labelFont, labelBrush, r.Left - r.Width / 5, r.Top - labelFont.Height);
     }
 
     private void DrawMapCharacter(Graphics g, Rectangle r)
@@ -654,14 +742,126 @@ internal sealed class AdventureGameControl : UserControl
     }
     private void DrawBattle(Graphics g, Rectangle b)
     {
-        using var veil = new SolidBrush(Color.FromArgb(218, 5, 10, 24)); g.FillRectangle(veil, b);
-        using var ground = new LinearGradientBrush(new Rectangle(0, b.Height * 2 / 3, b.Width, b.Height / 3), Color.FromArgb(61, 83, 96), Color.FromArgb(20, 28, 44), LinearGradientMode.Vertical); g.FillRectangle(ground, 0, b.Height * 2 / 3, b.Width, b.Height / 3);
-        DrawHero(g, new Rectangle(b.Width / 4 - 48, b.Height / 2, 96, 124)); DrawEnemy(g, new Rectangle(b.Width * 3 / 4 - 62, b.Height / 2, 124, 124), enemy.Boss);
-        using var title = new Font("Segoe UI", 24, FontStyle.Bold); using var small = new Font("Segoe UI", 13); using var white = new SolidBrush(Color.White); using var cyan = new SolidBrush(Cyan);
-        g.DrawString(enemy.Boss ? "JEFE DE MAZMORRA" : "ENCUENTRO HOSTIL", title, cyan, 32, 26);
-        g.DrawString(data.Explorer + $" · {data.Hp}/{data.MaxHp} HP", small, white, b.Width / 4 - 90, b.Height * 2 / 3 + 10);
-        g.DrawString(enemy.Name + $" · {enemy.Hp}/{enemy.MaxHp} HP", small, white, b.Width * 3 / 4 - 120, b.Height * 2 / 3 + 10);
-        g.DrawString("1  ATACAR       2  USAR OBJETO       3  RETIRARSE", small, cyan, b.Width / 2 - 210, b.Height - 45);
+        int floorY = b.Height * 2 / 3;
+        using (var sky = new LinearGradientBrush(b, Color.FromArgb(11, 25, 57), Color.FromArgb(41, 23, 69), LinearGradientMode.Vertical)) g.FillRectangle(sky, b);
+        using (var skylineGlow = new SolidBrush(Color.FromArgb(45, 36, 186, 226))) g.FillEllipse(skylineGlow, b.Width / 2 - b.Width / 3, floorY - b.Height / 2, b.Width * 2 / 3, b.Height / 2);
+
+        // Night city arena with lit windows and a glowing horizon, inspired by the reference clip.
+        var skyline = new[] { (0.02f, .37f, .13f), (.17f, .30f, .11f), (.31f, .40f, .10f), (.43f, .24f, .12f), (.58f, .34f, .10f), (.72f, .28f, .12f), (.87f, .38f, .13f) };
+        foreach (var building in skyline)
+        {
+            int x = (int)(b.Width * building.Item1), w = (int)(b.Width * building.Item3), h = (int)(b.Height * building.Item2);
+            var tower = new Rectangle(x, floorY - h, w, h);
+            using var facade = new LinearGradientBrush(tower, Color.FromArgb(56, 89, 143), Color.FromArgb(12, 25, 52), LinearGradientMode.Vertical);
+            g.FillRectangle(facade, tower);
+            using var edge = new Pen(Color.FromArgb(100, 108, 197, 232), Math.Max(1, b.Width / 900)); g.DrawLine(edge, x + 4, floorY - h, x + 4, floorY);
+            using var window = new SolidBrush(Color.FromArgb(105, 93, 201, 240));
+            for (int wy = floorY - h + 12; wy < floorY - 8; wy += Math.Max(12, b.Height / 22))
+                for (int wx = x + 12; wx < x + w - 7; wx += Math.Max(12, b.Width / 70)) g.FillRectangle(window, wx, wy, 4, 6);
+        }
+        using (var horizon = new Pen(Color.FromArgb(155, 57, 223, 244), Math.Max(2, b.Width / 500))) g.DrawLine(horizon, 0, floorY, b.Width, floorY);
+        using (var floor = new LinearGradientBrush(new Rectangle(0, floorY, b.Width, b.Height - floorY), Color.FromArgb(29, 77, 116), Color.FromArgb(7, 13, 29), LinearGradientMode.Vertical)) g.FillRectangle(floor, 0, floorY, b.Width, b.Height - floorY);
+        using (var grid = new Pen(Color.FromArgb(66, 90, 215, 245), 1))
+        {
+            for (int i = 1; i <= 7; i++) { int y = floorY + i * (b.Height - floorY) / 8; g.DrawLine(grid, 0, y, b.Width, y); }
+            for (int i = 0; i <= 12; i++) { int x = i * b.Width / 12; g.DrawLine(grid, b.Width / 2, floorY, x, b.Bottom); }
+        }
+
+        int heroX = b.Width * 29 / 100, enemyX = b.Width * 72 / 100;
+        int spriteHeight = Math.Clamp(b.Height / 4, 86, 142), spriteWidth = spriteHeight * 3 / 4;
+        int spriteY = floorY - spriteHeight + Math.Max(2, b.Height / 100);
+        using (var shadow = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
+        {
+            g.FillEllipse(shadow, heroX - spriteWidth / 2, floorY - 7, spriteWidth, 15);
+            g.FillEllipse(shadow, enemyX - spriteWidth / 2, floorY - 7, spriteWidth, 15);
+        }
+        DrawMapCharacter(g, new Rectangle(heroX - spriteWidth / 2, spriteY, spriteWidth, spriteHeight));
+        DrawBattleEnemy(g, new Rectangle(enemyX - spriteWidth / 2, spriteY, spriteWidth, spriteHeight), enemy.Boss);
+        if (data.IrisAwake) DrawIrisCompanion(g, new Rectangle(heroX + spriteWidth / 2 - 5, floorY - spriteHeight * 2 / 3, spriteWidth / 2, spriteHeight * 2 / 3));
+
+        if (DateTime.UtcNow < battleImpactUntil)
+        {
+            float phase = (Environment.TickCount % 360) / 360f;
+            int impactX = enemyX, impactY = spriteY + spriteHeight / 2;
+            using var beam = new Pen(Color.FromArgb(185, 111, 239, 255), Math.Max(4, b.Width / 180));
+            using var core = new Pen(Color.FromArgb(235, 255, 255, 224), Math.Max(2, b.Width / 360));
+            g.DrawLine(beam, heroX + spriteWidth / 3, impactY + 16, impactX - spriteWidth / 4, impactY - 8);
+            g.DrawLine(core, heroX + spriteWidth / 3, impactY + 16, impactX - spriteWidth / 4, impactY - 8);
+            using var ring = new Pen(Color.FromArgb(190, 76, 225, 255), 3);
+            int radius = (int)(18 + phase * 30); g.DrawEllipse(ring, impactX - radius, impactY - radius, radius * 2, radius * 2);
+            for (int i = 0; i < 8; i++) { double a = i * Math.PI / 4 + phase; int sx = impactX + (int)(Math.Cos(a) * (radius + 8)), sy = impactY + (int)(Math.Sin(a) * (radius + 8)); g.FillEllipse(Brushes.LightCyan, sx, sy, 4, 4); }
+        }
+
+        using var title = new Font("Segoe UI", Math.Clamp(b.Width / 58f, 16f, 26f), FontStyle.Bold);
+        using var label = new Font("Segoe UI", Math.Clamp(b.Width / 105f, 10f, 15f), FontStyle.Bold);
+        using var small = new Font("Segoe UI", Math.Clamp(b.Width / 135f, 9f, 12f));
+        using var white = new SolidBrush(Color.White); using var cyan = new SolidBrush(Color.FromArgb(133, 236, 255));
+        g.DrawString(enemy.Boss ? "DUELO DE GUARDIÁN" : "ENCUENTRO HOSTIL", title, cyan, 24, 18);
+        g.DrawString("ARENA NEXUS   //   " + WorldNames[data.World - 1], small, white, 28, 22 + title.Height);
+        DrawBattleHealth(g, 28, 96, Math.Min(b.Width / 3, 330), data.Hp, data.MaxHp, data.Explorer, Color.FromArgb(66, 224, 173), label, small);
+        DrawBattleHealth(g, b.Width - Math.Min(b.Width / 3, 330) - 28, 96, Math.Min(b.Width / 3, 330), enemy.Hp, enemy.MaxHp, enemy.Name, Color.FromArgb(255, 91, 117), label, small);
+        if (data.IrisAwake) g.DrawString("IRIS · APOYO ACTIVO  +8 DAÑO", small, cyan, 28, 136);
+        DrawBattleActionButtons(g, b, label, small);
+    }
+
+    private void HandleCanvasClick(Point point, Rectangle bounds)
+    {
+        if (mode != "battle") return;
+        int buttonWidth = Math.Min(190, (bounds.Width - 48) / 3), gap = 10, total = buttonWidth * 3 + gap * 2;
+        int left = (bounds.Width - total) / 2, top = bounds.Height - 76;
+        for (int i = 0; i < 3; i++)
+            if (new Rectangle(left + i * (buttonWidth + gap), top, buttonWidth, 58).Contains(point)) { BattleAction(i + 1); return; }
+    }
+
+    private void DrawBattleActionButtons(Graphics g, Rectangle bounds, Font label, Font small)
+    {
+        int buttonWidth = Math.Min(190, (bounds.Width - 48) / 3), gap = 10, total = buttonWidth * 3 + gap * 2;
+        int left = (bounds.Width - total) / 2, top = bounds.Height - 76;
+        string[] titles = ["1  GOLPE", "2  RECUPERAR", "3  RETIRARSE"];
+        string[] subtitles = [data.IrisAwake ? "Combo con IRIS" : data.Weapon, "Usar botiquín", enemy.Boss ? "Jefe bloquea la salida" : "Abandonar duelo"];
+        for (int i = 0; i < 3; i++)
+        {
+            var rect = new Rectangle(left + i * (buttonWidth + gap), top, buttonWidth, 58);
+            using var fill = new LinearGradientBrush(rect, i == 0 ? Color.FromArgb(83, 41, 168) : Color.FromArgb(24, 45, 78), i == 0 ? Color.FromArgb(28, 111, 174) : Color.FromArgb(13, 25, 48), LinearGradientMode.Vertical);
+            using var border = new Pen(i == 0 ? Color.FromArgb(140, 122, 229, 255) : Color.FromArgb(95, 102, 160, 205), 1.3f);
+            FillRoundedRectangle(g, fill, rect, 9); DrawRoundedRectangle(g, border, rect, 9);
+            using var white = new SolidBrush(Color.White); using var muted = new SolidBrush(Color.FromArgb(177, 205, 225));
+            g.DrawString(titles[i], label, white, rect.Left + 12, rect.Top + 7);
+            g.DrawString(subtitles[i], small, muted, rect.Left + 12, rect.Top + 31);
+        }
+    }
+
+    private static void DrawBattleHealth(Graphics g, int x, int y, int width, int hp, int maxHp, string name, Color fill, Font label, Font small)
+    {
+        using var text = new SolidBrush(Color.White); using var muted = new SolidBrush(Color.FromArgb(183, 208, 226));
+        g.DrawString(name.ToUpperInvariant(), label, text, x, y - label.Height - 4);
+        var bar = new Rectangle(x, y, width, 15);
+        using var back = new SolidBrush(Color.FromArgb(188, 12, 18, 35)); g.FillRectangle(back, bar);
+        int fillWidth = (int)((bar.Width - 2) * Math.Clamp(hp / (float)Math.Max(1, maxHp), 0, 1));
+        if (fillWidth > 0) { using var brush = new LinearGradientBrush(new Rectangle(bar.Left + 1, bar.Top + 1, Math.Max(1, fillWidth), bar.Height - 2), fill, Color.FromArgb(230, fill), LinearGradientMode.Horizontal); g.FillRectangle(brush, bar.Left + 1, bar.Top + 1, fillWidth, bar.Height - 2); }
+        using var border = new Pen(Color.FromArgb(155, 140, 215, 245)); g.DrawRectangle(border, bar);
+        g.DrawString($"{hp} / {maxHp} HP", small, muted, x, y + 17);
+    }
+
+    private static void DrawBattleEnemy(Graphics g, Rectangle r, bool boss)
+    {
+        var old = g.SmoothingMode; g.SmoothingMode = SmoothingMode.None;
+        using var metal = new SolidBrush(boss ? Color.FromArgb(154, 49, 86) : Color.FromArgb(81, 142, 151));
+        using var shade = new SolidBrush(boss ? Color.FromArgb(70, 26, 56) : Color.FromArgb(35, 63, 83));
+        using var light = new SolidBrush(boss ? Color.FromArgb(255, 111, 112) : Color.FromArgb(139, 215, 220));
+        using var eye = new SolidBrush(Color.FromArgb(255, 239, 123));
+        int s = Math.Max(4, r.Width / 11), cx = r.Left + r.Width / 2;
+        g.FillRectangle(shade, cx - 3 * s, r.Top + 5 * s, 6 * s, 9 * s);
+        g.FillRectangle(metal, cx - 2 * s, r.Top + 3 * s, 4 * s, 8 * s);
+        g.FillRectangle(shade, cx - 3 * s, r.Top + s, 6 * s, 5 * s);
+        g.FillRectangle(light, cx - 2 * s, r.Top + 2 * s, 4 * s, 2 * s);
+        g.FillRectangle(eye, cx - s, r.Top + 3 * s, 2 * s, Math.Max(2, s / 2));
+        g.FillRectangle(metal, cx - 4 * s, r.Top + 6 * s, s, 6 * s);
+        g.FillRectangle(metal, cx + 3 * s, r.Top + 6 * s, s, 6 * s);
+        g.FillRectangle(shade, cx - 2 * s, r.Top + 13 * s, 2 * s, 4 * s);
+        g.FillRectangle(shade, cx + s, r.Top + 13 * s, 2 * s, 4 * s);
+        if (boss) { g.FillRectangle(light, cx - 4 * s, r.Top, 2 * s, 3 * s); g.FillRectangle(light, cx + 2 * s, r.Top, 2 * s, 3 * s); }
+        g.SmoothingMode = old;
     }
 
     private static string[][] BuildMaps()
@@ -673,13 +873,14 @@ internal sealed class AdventureGameControl : UserControl
             // Give each reality a distinct silhouette before carving its walkable streets.
             for (int y = 1; y < MapHeight - 1; y++) for (int x = 1; x < MapWidth - 1; x++)
             {
-                if (world == 1 && ((x * 13 + y * 7 + 11) % 8 < 4) && (x < 8 || x > 23 || y < 4 || y > 15)) map[y][x] = 'T';
-                if (world == 1 && x >= 13 && x <= 15 && y >= 2 && y <= 7) map[y][x] = '~';
+                int region = (x / 16 + y / 10 + world) % 4;
+                if (world == 1 && region is 0 or 1 && ((x * 13 + y * 7 + 11) % 5 < 2)) map[y][x] = 'T';
+                if (world == 1 && ((x >= 13 && x <= 15 && y >= 2 && y <= 7) || (x >= 45 && x <= 48 && y >= 26 && y <= 31))) map[y][x] = '~';
                 if (world == 2 && ((x >= 3 && x <= 8 && y >= 3 && y <= 5) || (x >= 12 && x <= 16 && y >= 3 && y <= 5) || (x >= 24 && x <= 29 && y >= 3 && y <= 5))) map[y][x] = 'H';
-                if (world == 2 && ((x * 5 + y * 3) % 11 == 0)) map[y][x] = '#';
-                if (world == 3 && ((x >= 11 && x <= 13 && y >= 2 && y <= 8) || (x >= 16 && x <= 18 && y >= 12 && y <= 18))) map[y][x] = '~';
-                if (world == 3 && ((x + y * 2) % 13 == 0)) map[y][x] = '#';
-                if (world == 4 && ((x * 3 + y * 5) % 17 == 0)) map[y][x] = '#';
+                if (world == 2 && region is 1 or 3 && ((x * 5 + y * 3) % 11 == 0)) map[y][x] = '#';
+                if (world == 3 && ((x >= 11 && x <= 13 && y >= 2 && y <= 8) || (x >= 16 && x <= 18 && y >= 12 && y <= 18) || (x >= 42 && x <= 45 && y >= 23 && y <= 29))) map[y][x] = '~';
+                if (world == 3 && region is 0 or 2 && ((x + y * 2) % 13 == 0)) map[y][x] = '#';
+                if (world == 4 && region is 1 or 2 && ((x * 3 + y * 5) % 17 == 0)) map[y][x] = '#';
             }
             if (world == 1)
                 foreach (var p in new[] { (3, 6), (5, 6), (3, 8), (25, 6), (27, 6), (25, 8) }) PlaceBuilding(map, p.Item1, p.Item2);
@@ -703,6 +904,8 @@ internal sealed class AdventureGameControl : UserControl
             for (int y = 10; y <= 15; y++) map[y][21] = '.';
             for (int x = 21; x <= 28; x++) map[10][x] = '.';
             map[9][6] = 'Q'; map[10][8] = 'D'; map[5][12] = 'C'; map[5][18] = 'E'; map[14][12] = 'E'; map[10][28] = 'P'; map[15][22] = 'B';
+            // Three optional landmarks reward exploration beyond the starting valley.
+            map[20][35] = 'C'; map[31][49] = 'Q'; map[6][51] = 'C';
             // Mazmorra approach is kept clear; the actual interior is its own navigable tile map.
             result[world - 1] = map.Select(row => new string(row)).ToArray();
         }
@@ -718,3 +921,4 @@ internal sealed class AdventureGameControl : UserControl
 
     protected override void Dispose(bool disposing) { if (disposing) heroPortrait?.Dispose(); base.Dispose(disposing); }
 }
+

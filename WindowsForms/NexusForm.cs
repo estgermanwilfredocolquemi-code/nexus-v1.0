@@ -54,15 +54,15 @@ internal sealed class NexusForm : Form
     private void ShowSplash()
     {
         var page = new Panel { Dock = DockStyle.Fill, BackColor = Ink, BackgroundImage = LoadArtwork(splashPath), BackgroundImageLayout = ImageLayout.Zoom };
-        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 158, BackColor = Color.FromArgb(226, 7, 8, 28), Padding = new Padding(45, 8, 45, 8) };
+        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 178, BackColor = Color.FromArgb(235, 7, 8, 28), Padding = new Padding(45, 8, 45, 8) };
         page.Controls.Add(bottom);
         var loadLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent };
-        loadLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        loadLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        loadLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        loadLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
         loadLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         bottom.Controls.Add(loadLayout);
-        loadingLabel = new Label { Text = "SINCRONIZANDO NÚCLEO NEXUS · 0%", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Cyan, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
-        loadingBar = new NexusProgressBar { Dock = DockStyle.Fill, Value = 0 };
+        loadingLabel = new Label { Text = "SINCRONIZANDO NÚCLEO NEXUS · IRIS EN ESPERA · 0%", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Cyan, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
+        loadingBar = new NexusProgressBar { Dock = DockStyle.Fill, Height = 58, Value = 0 };
         var enter = StyledButton("PRESIONA ENTER PARA CONTINUAR", Purple, Color.White, 350, 44);
         enter.Anchor = AnchorStyles.None;
         enter.Enabled = false;
@@ -81,7 +81,7 @@ internal sealed class NexusForm : Form
         {
             progress = Math.Min(100, progress + 2);
             loadingBar.Value = progress;
-            loadingLabel.Text = progress < 100 ? $"SINCRONIZANDO NÚCLEO NEXUS · {progress}%" : "NÚCLEO NEXUS EN LÍNEA · PULSA ENTER";
+            loadingLabel.Text = progress < 100 ? $"SINCRONIZANDO NÚCLEO NEXUS · IRIS EN ESPERA · {progress}%" : "NÚCLEO NEXUS EN LÍNEA · PULSA ENTER";
             if (progress == 100) { loadingTimer.Stop(); enter.Enabled = true; }
         };
         loadingTimer.Start();
@@ -663,8 +663,8 @@ internal sealed class NexusProgressBar : Control
 
     public NexusProgressBar()
     {
-        Height = 34;
-        MinimumSize = new Size(140, 34);
+        Height = 58;
+        MinimumSize = new Size(140, 58);
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         animationTimer = new System.Windows.Forms.Timer { Interval = 70 };
         animationTimer.Tick += (_, _) => Invalidate();
@@ -675,7 +675,8 @@ internal sealed class NexusProgressBar : Control
     {
         base.OnPaint(e);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        var bounds = new Rectangle(1, 2, Math.Max(1, Width - 3), Math.Max(1, Height - 5));
+        // Reserve the upper half for IRIS's courier robot; its feet meet the bar's top edge.
+        var bounds = new Rectangle(1, Height - 21, Math.Max(1, Width - 3), 16);
         using var background = new SolidBrush(Color.FromArgb(23, 17, 47));
         e.Graphics.FillRectangle(background, bounds);
         int fillWidth = (int)((bounds.Width - 2) * (value / 100f));
@@ -692,40 +693,40 @@ internal sealed class NexusProgressBar : Control
             e.Graphics.DrawLine(tick, x, bounds.Top + 2, x, bounds.Bottom - 2);
         }
 
-        int runnerX = Math.Clamp(bounds.Left + 1 + fillWidth, bounds.Left + 12, bounds.Right - 12);
-        int runnerY = bounds.Top + bounds.Height / 2;
+        int runnerX = Math.Clamp(bounds.Left + 1 + fillWidth, bounds.Left + 16, bounds.Right - 16);
+        int runnerY = bounds.Top - 10;
         double pulse = (Math.Sin(Environment.TickCount / 180.0) + 1) / 2;
         bool stride = (Environment.TickCount / 105) % 2 == 0;
         int haloAlpha = 28 + (int)(52 * pulse);
         using (var halo = new SolidBrush(Color.FromArgb(haloAlpha, 57, 218, 255)))
-            e.Graphics.FillEllipse(halo, runnerX - 16, runnerY - 15, 32, 30);
+            e.Graphics.FillEllipse(halo, runnerX - 18, runnerY - 16, 36, 32);
         using (var ring = new Pen(Color.FromArgb(70 + (int)(100 * pulse), 84, 222, 255), 1.2f))
             e.Graphics.DrawEllipse(ring, runnerX - 12, runnerY - 13, 24, 26);
 
         // Robotito mecánico: la posición sigue el porcentaje y las piernas alternan el paso.
-        using var shadow = new SolidBrush(Color.FromArgb(95, 0, 0, 0));
-        e.Graphics.FillEllipse(shadow, runnerX - 8, runnerY + 9, 16, 4);
+        using var shadow = new SolidBrush(Color.FromArgb(145, 0, 0, 0));
+        e.Graphics.FillEllipse(shadow, runnerX - 11, bounds.Top - 1, 22, 5);
         using var metal = new SolidBrush(Color.FromArgb(226, 237, 246));
         using var darkMetal = new SolidBrush(Color.FromArgb(74, 112, 145));
         using var visor = new SolidBrush(Color.FromArgb(55 + (int)(55 * pulse), 52, 219, 255));
         using var eye = new SolidBrush(Color.FromArgb(235, 240, 255));
-        e.Graphics.FillEllipse(metal, runnerX - 6, runnerY - 13, 12, 10);
-        e.Graphics.FillRectangle(visor, runnerX - 4, runnerY - 10, 8, 4);
-        e.Graphics.FillEllipse(eye, runnerX - 2, runnerY - 9, 2, 2);
-        e.Graphics.FillEllipse(eye, runnerX + 1, runnerY - 9, 2, 2);
-        e.Graphics.FillRectangle(darkMetal, runnerX - 8, runnerY - 3, 16, 11);
-        e.Graphics.FillRectangle(metal, runnerX - 6, runnerY - 2, 12, 8);
+        e.Graphics.FillEllipse(metal, runnerX - 7, runnerY - 15, 14, 12);
+        e.Graphics.FillRectangle(visor, runnerX - 5, runnerY - 11, 10, 5);
+        e.Graphics.FillEllipse(eye, runnerX - 2, runnerY - 10, 2, 2);
+        e.Graphics.FillEllipse(eye, runnerX + 1, runnerY - 10, 2, 2);
+        e.Graphics.FillRectangle(darkMetal, runnerX - 10, runnerY - 3, 20, 13);
+        e.Graphics.FillRectangle(metal, runnerX - 7, runnerY - 2, 14, 9);
         using var core = new SolidBrush(Color.FromArgb(90 + (int)(145 * pulse), 65, 223, 255));
-        e.Graphics.FillRectangle(core, runnerX - 2, runnerY + 1, 4, 4);
+        e.Graphics.FillRectangle(core, runnerX - 3, runnerY + 1, 6, 5);
 
-        using var limb = new Pen(Color.FromArgb(225, 211, 229, 240), 2.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        using var limb = new Pen(Color.FromArgb(235, 211, 229, 240), 2.8f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         using var joint = new SolidBrush(Color.FromArgb(75, 132, 160));
-        int step = stride ? 3 : -3;
-        e.Graphics.DrawLine(limb, runnerX - 4, runnerY + 7, runnerX - 5 + step, runnerY + 12);
-        e.Graphics.DrawLine(limb, runnerX + 4, runnerY + 7, runnerX + 5 - step, runnerY + 12);
-        e.Graphics.DrawLine(limb, runnerX - 7, runnerY, runnerX - 10, runnerY + (stride ? 3 : -2));
-        e.Graphics.DrawLine(limb, runnerX + 7, runnerY, runnerX + 10, runnerY + (stride ? -2 : 3));
-        e.Graphics.FillEllipse(joint, runnerX - 3, runnerY + 6, 6, 4);
+        int step = stride ? 4 : -4;
+        e.Graphics.DrawLine(limb, runnerX - 5, runnerY + 8, runnerX - 6 + step, runnerY + 14);
+        e.Graphics.DrawLine(limb, runnerX + 5, runnerY + 8, runnerX + 6 - step, runnerY + 14);
+        e.Graphics.DrawLine(limb, runnerX - 9, runnerY, runnerX - 13, runnerY + (stride ? 4 : -3));
+        e.Graphics.DrawLine(limb, runnerX + 9, runnerY, runnerX + 13, runnerY + (stride ? -3 : 4));
+        e.Graphics.FillEllipse(joint, runnerX - 4, runnerY + 7, 8, 5);
 
         using var border = new Pen(Color.FromArgb(160 + (int)(75 * pulse), 92, 203, 255), 1.4f);
         e.Graphics.DrawRectangle(border, bounds);
@@ -737,3 +738,4 @@ internal sealed class NexusProgressBar : Control
         base.Dispose(disposing);
     }
 }
+
