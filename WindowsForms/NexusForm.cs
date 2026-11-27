@@ -483,24 +483,6 @@ internal sealed class NexusForm : Form
         var saves = AdventureGameControl.ListSaves();
         if (saves.Count == 0)
         {
-<<<<<<< HEAD
-            MessageBox.Show("Todavía no hay partidas de aventura guardadas. Pulsa JUGAR para comenzar y usa Guardar dentro del juego.", "NEXUS · partidas");
-            return;
-        }
-        using var dialog = new Form { Text = "PARTIDAS DE AVENTURA", StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, ClientSize = new Size(690, 390), BackColor = Panel, ForeColor = Color.White, MaximizeBox = false, MinimizeBox = false };
-        var list = new ListBox { Left = 16, Top = 16, Width = 656, Height = 300, BackColor = Color.FromArgb(10, 9, 29), ForeColor = Color.White, Font = new Font("Segoe UI", 10) };
-        void RefreshList()
-        {
-            list.Items.Clear();
-            foreach (var save in saves) list.Items.Add($"{save.Name}  |  {save.Explorer}  |  {save.Updated:g}");
-            if (list.Items.Count > 0) list.SelectedIndex = 0;
-        }
-        RefreshList();
-        var load = StyledButton("CONTINUAR", Purple, Color.White, 130, 36); load.Left = 16; load.Top = 330;
-        var delete = StyledButton("ELIMINAR", Color.FromArgb(104, 27, 61), Color.White, 120, 36); delete.Left = 405; delete.Top = 330;
-        var cancel = StyledButton("CERRAR", Color.FromArgb(30, 22, 58), Color.White, 120, 36); cancel.Left = 536; cancel.Top = 330; cancel.DialogResult = DialogResult.Cancel;
-        load.Click += (_, _) => { if (list.SelectedIndex < 0 || list.SelectedIndex >= saves.Count) return; dialog.Tag = saves[list.SelectedIndex].Name; dialog.DialogResult = DialogResult.OK; dialog.Close(); };
-=======
             if (MessageBox.Show("Todavía no hay partidas guardadas. ¿Quieres comenzar una expedición nueva?", "NEXUS · partidas", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                 StartAdventure(null, selectedWorld);
             return;
@@ -544,7 +526,6 @@ internal sealed class NexusForm : Form
             if (MessageBox.Show("¿Continuar con esta partida?\r\n\r\n" + summary, "NEXUS · confirmar carga", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             dialog.Tag = selectedSave.Name; dialog.DialogResult = DialogResult.OK; dialog.Close();
         };
->>>>>>> a92c8774b8e317281b29c03b3bb90af0d8e400cc
         delete.Click += (_, _) =>
         {
             if (list.SelectedIndex < 0 || list.SelectedIndex >= saves.Count) return;
@@ -552,11 +533,7 @@ internal sealed class NexusForm : Form
             if (MessageBox.Show($"¿Eliminar la partida '{saveName}'?", "NEXUS", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
             AdventureGameControl.DeleteSave(saveName); saves.RemoveAt(list.SelectedIndex); RefreshList(); if (saves.Count == 0) dialog.Close();
         };
-<<<<<<< HEAD
-        dialog.Controls.AddRange([list, load, delete, cancel]); dialog.CancelButton = cancel;
-=======
         dialog.Controls.AddRange([heading, subheading, list, load, delete, cancel]); dialog.CancelButton = cancel;
->>>>>>> a92c8774b8e317281b29c03b3bb90af0d8e400cc
         if (dialog.ShowDialog(this) == DialogResult.OK && dialog.Tag is string saveName)
         {
             var saved = AdventureGameControl.LoadSave(saveName);
