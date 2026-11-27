@@ -1,36 +1,33 @@
-# NEXUS v1.0 — Aventura integrada
+# NEXUS v1.0 — Aventura de ciencia ficción
 
-NEXUS conserva su juego original en C# y añade una aventura gráfica de cuatro realidades dentro de Windows Forms. El modo nuevo usa mapas ilustrados con movimiento libre y guardado local. El modo **NEXUS v1.0 clásico** mantiene disponible el flujo original, sus sistemas IRIS y sus expediciones guardadas en SQL Server.
+NEXUS es una aventura de exploración para Windows escrita en C#. La campaña gráfica ahora muestra el mundo en **3D en tiempo real** mediante OpenGL nativo de Windows. El juego también conserva el modo original de consola y sus expediciones SQL.
 
-## Ejecutar
+## Abrir en Windows
 
-- Para abrirlo directamente en Windows, ejecuta `NEXUS.exe` dentro de la carpeta `ejecutable` del paquete publicado.
-- El ejecutable necesita **.NET 10 Desktop Runtime para Windows**. La aventura no requiere configurar SQL Server.
-- Para abrir el código en Visual Studio, usa `nexus v1.0.slnx` y selecciona el perfil `NEXUS Windows Forms`.
-- Para iniciar desde terminal con .NET 10 instalado: `dotnet run --project "WindowsForms/NEXUS-WindowsForms.csproj"`.
-- El modo clásico de consola se ejecuta con `dotnet run --project "nexus 3.csproj"`.
+- Ejecuta `NEXUS.exe` desde el paquete publicado, o abre `nexus v1.0.slnx` en Visual Studio y elige `NEXUS Windows Forms`.
+- Requiere **.NET 10 Desktop Runtime para Windows**. El render 3D usa `opengl32.dll` que incluye Windows; no hay que instalar un motor ni paquetes adicionales.
+- Para iniciar desde terminal: `dotnet run --project "WindowsForms/NEXUS-WindowsForms.csproj"`.
+- Para iniciar el modo clásico: `dotnet run --project "nexus 3.csproj"`.
 
-## Contenido de la aventura
+## Mundo y campaña
 
-- **TIERRA-01:** bosque, refugios, ciudad pequeña, robots, cofres y mazmorra.
-- **TIERRA-02:** zona zombi, edificios abandonados, autómatas infectados y mazmorra.
-- **TIERRA-07:** frontera criogénica, ruinas, centinelas de hielo y mazmorra.
-- **NEXUS-09:** ciudad digital, robots de la brecha, mazmorra y jefe final.
-- Al comenzar una aventura, puedes escoger cualquiera de las cuatro dimensiones. Cada una tiene una distribución y terreno propios; los portales permiten avanzar a las siguientes.
-- Movimiento con **WASD** o flechas; **E** interactúa; **I** abre el inventario; **M** muestra misiones; **Esc** abre pausa.
-- Combate por turnos: **1** atacar, **2** usar objeto, **3** retirarse de enemigos comunes.
-- Cofres entregan créditos, pociones, armas y protección. El inventario permite usar curaciones y equipar armas o armaduras.
-- Enemigos y jefes entregan experiencia. Los niveles aumentan la salud y el ataque.
-- Cada mundo tiene una misión principal, un encargo secundario y una mazmorra. Derrotar al jefe activa el portal al siguiente mundo.
-- Las partidas de aventura se guardan como archivos JSON en `%LOCALAPPDATA%\NEXUS\Partidas`; no necesitan SQL Server.
+- Cuatro realidades: Bosque Vivo, Zona Cero, Frontera Criogénica y Ciudad NEXUS.
+- El mapa exterior se genera por coordenadas y continúa al explorar en cualquier dirección. Bosques, ruinas, agua, enemigos y suministros vuelven a aparecer en el mismo sitio al regresar.
+- Vista en tercera persona, terreno tridimensional, árboles, arbustos, rocas, ruinas, portales, cofres y personajes con extremidades animadas.
+- Un prólogo presenta la primera fractura, el misterio de IRIS y el conflicto con el Titán. Cada héroe tiene un origen y una ventaja jugable.
+- Mara, Tarek, Niva y Kael ofrecen encargos: puedes aceptarlos, completar su objetivo y volver a reclamar la recompensa.
+- Las mazmorras conectan cada capítulo. El Titán final requiere nivel 2 e IRIS.
+- El tema ambiental original se genera y se guarda en `%LOCALAPPDATA%\NEXUS\Audio`; el botón **Música** permite silenciarlo o reactivarlo.
 
-## Sistemas originales conservados
+## Controles
 
-`Program.cs` permanece como el juego original de consola y el modo **NEXUS v1.0 clásico** sigue disponible desde el menú de Windows Forms. Incluye sus cuatro realidades, exploración, IRIS, energía, conexión, peligro, estadísticas, objetivos y eventos. Las partidas clásicas siguen usando SQL Server Express y el menú **Expediciones SQL** permite continuar o eliminar esos guardados. La opción **Configuración SQL** inicializa la base cuando se usa por primera vez.
+- **WASD** o **flechas**: moverse.
+- **E**: hablar, abrir cofres, entrar a mazmorras y usar portales.
+- **I**: inventario; **M**: diario de misiones; **Esc**: pausa.
+- En combate: **1** ataque normal, **2** habilidad especial, **3** defensa, **4** objeto y **5** intentar huir.
+- El golpe crítico depende del héroe. Las habilidades consumen energía; defenderse reduce el daño y recarga energía. Los enemigos cargan ataques pesados que se pueden bloquear.
 
-Por defecto, el juego clásico usa `Server=localhost\\SQLEXPRESS;Database=NEXUS;Integrated Security=True;Encrypt=True;TrustServerCertificate=True`. Se puede configurar otra instancia con `NEXUS_SQL_CONNECTION_STRING`. La aventura gráfica no depende de esa base.
+## Guardados y modo clásico
 
-## Pendiente para una etapa posterior
-
-Música y efectos de sonido originales, y habilidades especiales de combate.
+Las partidas gráficas se guardan como JSON en `%LOCALAPPDATA%\NEXUS\Partidas`; no necesitan SQL Server. `Program.cs` y el menú **NEXUS v1.0 clásico** conservan el juego original de consola y sus expediciones SQL Server.
 
