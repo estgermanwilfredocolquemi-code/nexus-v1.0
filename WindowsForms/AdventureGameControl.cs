@@ -54,6 +54,7 @@ internal sealed class AdventureGameControl : UserControl
         public List<string> DiscoveredTiles { get; set; } = [];
         public bool IrisAwake { get; set; }
         public bool InDungeon { get; set; }
+        public bool PrologueSeen { get; set; }
         public int DungeonX { get; set; } = 1;
         public int DungeonY { get; set; } = 6;
         public int Energy { get; set; } = 50;
@@ -75,7 +76,8 @@ internal sealed class AdventureGameControl : UserControl
     private readonly Label status = new() { Dock = DockStyle.Bottom, Height = 34, ForeColor = Cyan, BackColor = Color.FromArgb(12, 19, 35), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(14, 0, 0, 0) };
     private readonly Label hud = new() { Dock = DockStyle.Top, Height = 54, ForeColor = Color.White, BackColor = Color.FromArgb(13, 20, 39), Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(16, 0, 0, 0) };
     private readonly FlowLayoutPanel toolbar = new() { Dock = DockStyle.Top, Height = 48, BackColor = Color.FromArgb(10, 16, 32), Padding = new Padding(8, 6, 8, 4), WrapContents = false, AutoScroll = true };
-    private readonly GameCanvas canvas;
+    private readonly FlowLayoutPanel battleActions = new() { Dock = DockStyle.Bottom, Height = 70, BackColor = Color.FromArgb(225, 9, 14, 29), Padding = new Padding(8, 8, 8, 6), WrapContents = false, Visible = false };
+    private readonly Nexus3DWorldControl canvas;
     private readonly Action returnToMenu;
     private readonly Image heroPortrait;
     private SaveData data;
@@ -86,26 +88,10 @@ internal sealed class AdventureGameControl : UserControl
     private DateTime battleImpactUntil = DateTime.MinValue;
     private readonly Random combatRng = new();
     private bool guarding;
+    private int lastMoveX, lastMoveY = -1;
 
     private static readonly string[] Dungeon = [
         "##############", "#....#.......#", "#....#..##...#", "#.......##...#", "###.#........#", "#...#..###...#", "#......#.....#", "#..##........#", "#............#", "##############"];
-
-    private sealed class GameCanvas : Control
-    {
-        private readonly AdventureGameControl owner;
-        private readonly System.Windows.Forms.Timer battleAnimation = new() { Interval = 55 };
-        internal GameCanvas(AdventureGameControl owner)
-        {
-            this.owner = owner; Dock = DockStyle.Fill; TabStop = true;
-            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-            MouseDown += (_, e) => { owner.HandleCanvasClick(e.Location, ClientRectangle); Focus(); };
-            battleAnimation.Tick += (_, _) => { if (owner.mode == "battle") Invalidate(); };
-            battleAnimation.Start();
-        }
-        protected override void OnPaint(PaintEventArgs e) => owner.DrawWorld(e.Graphics, ClientRectangle);
-        protected override void OnKeyDown(KeyEventArgs e) { owner.HandleKey(e); base.OnKeyDown(e); }
-        protected override void Dispose(bool disposing) { if (disposing) battleAnimation.Dispose(); base.Dispose(disposing); }
-    }
 
     internal AdventureGameControl(string explorer, bool female, int character, Action returnToMenu, SaveData loaded = null, int startingWorld = 1)
     {
@@ -122,15 +108,69 @@ internal sealed class AdventureGameControl : UserControl
         string portrait = data.CharacterId switch { 2 => "portrait-robot-aliado.png", 3 => "portrait-humano-enemigo.png", 4 => "portrait-robot-enemigo.png", _ => data.Female ? "portrait-humana-mujer.png" : "portrait-humano-hombre.png" };
         string portraitPath = Path.Combine(AppContext.BaseDirectory, portrait);
         if (File.Exists(portraitPath)) { using var image = Image.FromFile(portraitPath); heroPortrait = new Bitmap(image); }
-        canvas = new GameCanvas(this);
+        canvas = new Nexus3DWorldControl(this);
+        canvas.MouseDown += (_, _) => canvas.Focus();
         var header = new Panel { Dock = DockStyle.Top, Height = 54, BackColor = Color.FromArgb(10, 16, 32) };
         header.Controls.Add(new Label { Text = "N E X U S   //   MULTIVERSO", Dock = DockStyle.Left, Width = 330, ForeColor = Cyan, Font = new Font("Segoe UI", 15, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(14, 0, 0, 0) });
         header.Controls.Add(new Label { Text = "EXPLORADOR: " + data.Explorer.ToUpperInvariant(), Dock = DockStyle.Fill, ForeColor = Color.FromArgb(195, 210, 235), TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 18, 0) });
-        AddTool("Guardar", () => SaveCurrent()); AddTool("Inventario [I]", ShowInventory); AddTool("Equipo", ShowEquipment); AddTool("Misiones [M]", ShowMissions); AddTool("Mapa", ShowMapInfo); AddTool("Pausa [Esc]", ShowPause); AddTool("Menú principal", () => ConfirmReturn());
-        Controls.Add(canvas); Controls.Add(status); Controls.Add(hud); Controls.Add(toolbar); Controls.Add(header);
+        AddTool("Guardar", () => SaveCurrent()); AddTool("Inventario [I]", ShowInventory); AddTool("Equipo", ShowEquipment); AddTool("Misiones [M]", ShowMissions); AddTool("Mapa", ShowMapInfo); AddTool("Música: ON", () => { bool on = NexusSoundtrack.Toggle(); SetNotice(on ? "Música ambiental activada." : "Música ambiental silenciada."); }); AddTool("Pausa [Esc]", ShowPause); AddTool("Menú principal", () => ConfirmReturn());
+        AddBattleAction("1 · ATAQUE", 1); AddBattleAction("2 · HABILIDAD", 2); AddBattleAction("3 · DEFENDER", 3); AddBattleAction("4 · OBJETO", 4); AddBattleAction("5 · RETIRADA", 5);
+        Controls.Add(canvas); Controls.Add(status); Controls.Add(battleActions); Controls.Add(hud); Controls.Add(toolbar); Controls.Add(header);
         UpdateHud(); status.Text = notice;
         ShownFocus();
+        if (!data.PrologueSeen && loaded == null)
+        {
+            data.PrologueSeen = true;
+            BeginInvoke(new Action(ShowPrologue));
+        }
     }
+
+    private void AddBattleAction(string text, int action)
+    {
+        var button = new Button { Text = text, Width = 168, Height = 48, FlatStyle = FlatStyle.Flat, BackColor = Color.FromArgb(27, 46, 75), ForeColor = Color.White, Font = new Font("Segoe UI", 9, FontStyle.Bold), Margin = new Padding(6, 2, 6, 2), Cursor = Cursors.Hand };
+        button.FlatAppearance.BorderColor = Color.FromArgb(85, 151, 194);
+        button.Click += (_, _) => { BattleAction(action); canvas.Focus(); };
+        battleActions.Controls.Add(button);
+    }
+
+    private void ShowPrologue()
+    {
+        string origin = data.CharacterId switch
+        {
+            2 => "AUR0 apagó su núcleo de combate para sacar a seis familias del Refugio Raíz. Una voz desconocida volvió a encenderlo: IRIS.",
+            3 => "Vexa cruzó sola la Zona Cero durante tres inviernos. La última señal de su hermano llegó desde la torre de Némesis.",
+            4 => "Bastión-9 recibió la orden de borrar su ciudad. La desobedeció y perdió la memoria en la primera fractura.",
+            _ => "Lía/Elián Veld heredó el mapa incompleto de su madre, desaparecida al otro lado de la primera grieta. En sus notas encontró un nombre: IRIS."
+        };
+        ShowOverlay("CAPÍTULO I · LA PRIMERA FRACTURA", WorldLore[data.World - 1], panel =>
+        {
+            var story = new Label { Dock = DockStyle.Fill, ForeColor = Color.White, Font = new Font("Segoe UI", 12), Text = $"{origin}\r\n\r\nLa Anomalía está conectando realidades y despertando máquinas que ya no distinguen aliados. Sigue las señales hasta el refugio, escucha a sus habitantes y averigua quién abrió el primer portal.\r\n\r\nWASD o flechas para moverte · E para hablar y usar estructuras · 1–5 durante el combate · M para el diario.", TextAlign = ContentAlignment.MiddleLeft };
+            panel.Controls.Add(story);
+        });
+    }
+
+    internal int SceneWorld => data.World;
+    internal int SceneX => data.InDungeon ? data.DungeonX : data.X;
+    internal int SceneY => data.InDungeon ? data.DungeonY : data.Y;
+    internal bool SceneInDungeon => data.InDungeon;
+    internal bool SceneInBattle => mode == "battle" && enemy != null;
+    internal bool SceneHasIris => data.IrisAwake;
+    internal int SceneCharacter => data.CharacterId;
+    internal float SceneFacingAngle => lastMoveX switch { 1 => -90f, -1 => 90f, _ => lastMoveY > 0 ? 180f : 0f };
+    internal bool SceneEnemyIsBoss => enemy?.Boss == true;
+    internal float SceneEnemyHealthFraction => enemy == null ? 0 : enemy.Hp / (float)Math.Max(1, enemy.MaxHp);
+    internal bool SceneAttackFlash => DateTime.UtcNow < battleImpactUntil;
+    internal uint SceneNoise(int x, int y) => CellNoise(data.World, x, y);
+    internal char SceneTile(int x, int y)
+    {
+        if (!data.InDungeon) return GetWorldTile(data.World, x, y);
+        if (x == 10 && y == 7 && !data.DefeatedBosses.Contains("boss-" + data.World)) return 'B';
+        if (x == 10 && y == 1 && !data.OpenedChests.Contains("dungeon-" + data.World)) return 'C';
+        return y >= 0 && y < Dungeon.Length && x >= 0 && x < Dungeon[y].Length ? Dungeon[y][x] : '#';
+    }
+    internal bool SceneEnemyCleared(int x, int y) => data.ClearedEnemies.Contains($"field-{data.World}-{x}-{y}");
+    internal bool SceneBossCleared() => data.DefeatedBosses.Contains((data.InDungeon ? "boss-" : "guardian-") + data.World);
+    internal bool SceneChestOpened(int x, int y) => data.InDungeon ? data.OpenedChests.Contains("dungeon-" + data.World) : data.OpenedChests.Contains($"field-{data.World}-{x}-{y}");
 
     private void ShownFocus() { if (IsHandleCreated) canvas.Focus(); else HandleCreated += (_, _) => canvas.Focus(); }
     private void AddTool(string text, Action action)
@@ -320,6 +360,7 @@ internal sealed class AdventureGameControl : UserControl
         if (tile is '#' or 'T' or '~' or 'H') return;
         if (data.InDungeon) { data.DungeonX = nx; data.DungeonY = ny; }
         else { data.X = nx; data.Y = ny; }
+        lastMoveX = dx; lastMoveY = dy;
         if (!data.InDungeon) DiscoverAroundPlayer();
         if (tile == 'E' && !data.InDungeon) StartBattle(false, "field-" + data.World + "-" + nx + "-" + ny);
         else if (tile == 'B' && !data.InDungeon) StartBattle(true, "guardian-" + data.World);
@@ -457,7 +498,7 @@ internal sealed class AdventureGameControl : UserControl
         }
         int hp = (boss ? 85 : 34) + data.World * (boss ? 25 : 12);
         enemy = new EnemyData { Name = boss ? new[] { "", "Coloso de raíces", "Némesis infectada", "Guardián criogénico", "Titán NEXUS" }[data.World] : new[] { "", "Autómata de vigilancia", "Robot infectado", "Centinela de hielo", "Dron de la brecha" }[data.World], Hp = hp, MaxHp = hp, Boss = boss, Key = key };
-        mode = "battle"; SetNotice("¡Encuentro! Pulsa 1 para atacar · 2 para usar objeto · 3 para retirarte."); canvas.Invalidate();
+        mode = "battle"; battleActions.Visible = true; SetNotice("¡Encuentro! El enemigo telegrafía sus ataques pesados. Usa 1–5 para decidir."); canvas.Invalidate();
     }
 
     private void BattleAction(int action)
@@ -468,7 +509,7 @@ internal sealed class AdventureGameControl : UserControl
         if (action == 5)
         {
             if (enemy.Boss) SetNotice("El jefe bloquea la retirada. Tendrás que abrirte paso.");
-            else if (combatRng.Next(100) < 70) { enemy = null; mode = "map"; SetNotice("Te retiraste del combate. Recupera energía antes de volver."); }
+            else if (combatRng.Next(100) < 70) { enemy = null; mode = "map"; battleActions.Visible = false; SetNotice("Te retiraste del combate. Recupera energía antes de volver."); }
             else SetNotice("No encontraste una salida; el enemigo te corta el paso.");
             if (enemy == null) { canvas.Invalidate(); return; }
         }
@@ -502,7 +543,7 @@ internal sealed class AdventureGameControl : UserControl
         }
         if (enemy.Hp <= 0)
         {
-            var defeated = enemy; enemy = null; mode = "map"; data.EnemiesDefeated++;
+            var defeated = enemy; enemy = null; mode = "map"; battleActions.Visible = false; data.EnemiesDefeated++;
             if (defeated.Boss) { data.DefeatedBosses.Add(defeated.Key); data.CompletedMissions.Add("main-" + data.World); data.Coins += 80; GainExperience(160); data.Inventory.Add("Núcleo de jefe"); SetNotice($"¡Jefe derrotado! +80 créditos, 160 XP y núcleo de jefe. El portal quedó abierto."); }
             else { data.ClearedEnemies.Add(defeated.Key); data.Coins += 10; GainExperience(35); data.Inventory.Add("Chatarra robótica"); SetNotice("¡Victoria! +10 créditos, 35 XP y chatarra robótica."); }
         }
@@ -527,7 +568,7 @@ internal sealed class AdventureGameControl : UserControl
                 data.Hp = Math.Max(0, data.Hp - incoming);
                 SetNotice(guarding ? $"Defendiste el impacto y recibiste {incoming} de daño." : $"El enemigo contraataca: {incoming} de daño.");
             }
-            if (data.Hp == 0) { data.Hp = Math.Max(35, data.MaxHp / 2); data.InDungeon = false; data.X = 2; data.Y = 10; enemy = null; mode = "map"; SetNotice("Reinicio de emergencia: regresaste al refugio con media salud."); }
+            if (data.Hp == 0) { data.Hp = Math.Max(35, data.MaxHp / 2); data.InDungeon = false; data.X = 2; data.Y = 10; enemy = null; mode = "map"; battleActions.Visible = false; SetNotice("Reinicio de emergencia: regresaste al refugio con media salud."); }
         }
         UpdateHud(); canvas.Invalidate();
     }
@@ -550,7 +591,11 @@ internal sealed class AdventureGameControl : UserControl
             else SetNotice("¡Subiste al nivel " + data.Level + "! Salud y ataque aumentados.");
         }
     }
-    private void UpdateHud() => hud.Text = $"  {data.Explorer}   ◆ {WorldNames[data.World - 1]}   ♥ {data.Hp}/{data.MaxHp}   LV {data.Level} · {data.Experience}/{ExperienceToNext()} XP   ◈ {data.Coins}   ⚔ {data.Weapon}   {(data.IrisAwake ? "◆ IRIS EN LÍNEA" : "IRIS · BLOQUEADA HASTA NIVEL 2")}";
+    private void UpdateHud()
+    {
+        string fight = enemy == null ? "" : $"   VS {enemy.Name} · {enemy.Hp}/{enemy.MaxHp} HP";
+        hud.Text = $"  {data.Explorer}   ◆ {WorldNames[data.World - 1]}   ♥ {data.Hp}/{data.MaxHp}   LV {data.Level} · {data.Experience}/{ExperienceToNext()} XP   ⚡ {data.Energy}/100   ◈ {data.Coins}   ⚔ {data.Weapon}   {(data.IrisAwake ? "◆ IRIS EN LÍNEA" : "IRIS · BLOQUEADA HASTA NIVEL 2")}{fight}";
+    }
     private void SetNotice(string text) { notice = text; status.Text = "  " + text; }
 
     private string DiscoveryKey(int x, int y) => $"{data.World}:{x}:{y}";
@@ -965,7 +1010,7 @@ internal sealed class AdventureGameControl : UserControl
 
     // Deterministic coordinate-based terrain: no map edges, and a region
     // regenerates identically whenever a saved explorer returns to it.
-    private static char GetWorldTile(int world, int x, int y)
+    internal static char GetWorldTile(int world, int x, int y)
     {
         uint noise = CellNoise(world, x, y);
         int terrain = (int)(noise % 100);
@@ -1005,7 +1050,7 @@ internal sealed class AdventureGameControl : UserControl
     private static bool RiverAt(int x, int y) => Math.Abs(PositiveMod(y - x / 9, 83) - 41) <= 1;
     private static int FloorDiv(int value, int divisor) => (int)Math.Floor(value / (double)divisor);
     private static int PositiveMod(int value, int divisor) => (value % divisor + divisor) % divisor;
-    private static uint CellNoise(int world, int x, int y)
+    internal static uint CellNoise(int world, int x, int y)
     {
         unchecked
         {
@@ -1016,3 +1061,4 @@ internal sealed class AdventureGameControl : UserControl
     }
     protected override void Dispose(bool disposing) { if (disposing) heroPortrait?.Dispose(); base.Dispose(disposing); }
 }
+
